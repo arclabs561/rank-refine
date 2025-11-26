@@ -1,33 +1,101 @@
 # rank-refine
 
-Reranking for retrieval pipelines.
+Reranking algorithms for retrieval pipelines.
 
 [![CI](https://github.com/arclabs561/rank-refine/actions/workflows/ci.yml/badge.svg)](https://github.com/arclabs561/rank-refine/actions)
 [![Crates.io](https://img.shields.io/crates/v/rank-refine.svg)](https://crates.io/crates/rank-refine)
 [![Docs](https://docs.rs/rank-refine/badge.svg)](https://docs.rs/rank-refine)
 [![MSRV](https://img.shields.io/badge/MSRV-1.74-blue)](https://blog.rust-lang.org/2023/11/16/Rust-1.74.0.html)
 
-```rust
-use rank_refine::matryoshka;
+## Design: Bring Your Own Model (BYOM)
 
-let candidates = vec![("d1", 0.9), ("d2", 0.8)];
-let query = vec![0.1, 0.2, 0.3, 0.4];
-let docs = vec![("d1", vec![0.1, 0.2, 0.3, 0.4]), ("d2", vec![0.1, 0.2, 0.3, 0.4])];
-let refined = matryoshka::refine(&candidates, &query, &docs, 2);
+This crate provides **scoring algorithms only** — no model weights, no inference.
+You bring embeddings from your preferred source:
+
+| Embedding Source | Crate | Notes |
+|------------------|-------|-------|
+| [fastembed](https://crates.io/crates/fastembed) | `fastembed` | ONNX, many models |
+| [candle](https://github.com/huggingface/candle) | `candle-transformers` | Pure Rust |
+| [ort](https://crates.io/crates/ort) | `ort` | ONNX Runtime |
+| sentence-transformers | Python → JSON/bincode | Via serde |
+
+## Quick Start
+
+```rust
+use rank_refine::{simd, colbert, scoring::DenseScorer};
+
+// 1. Get embeddings from your model (fastembed, candle, etc.)
+let query_emb: Vec<f32> = /* your_model.embed("query") */;
+let doc_embs: Vec<Vec<f32>> = /* your_model.embed_batch(docs) */;
+
+// 2. Score with rank-refine
+let score = simd::cosine(&query_emb, &doc_embs[0]);
+
+// For ColBERT token embeddings:
+let query_tokens: Vec<Vec<f32>> = /* colbert_model.encode_query("query") */;
+let doc_tokens: Vec<Vec<f32>> = /* colbert_model.encode_doc("doc") */;
+let maxsim = simd::maxsim_vecs(&query_tokens, &doc_tokens);
+```
+
+## End-to-End Example with fastembed
+
+```toml
+# Cargo.toml
+[dependencies]
+rank-refine = "0.7"
+fastembed = "4"
+```
+
+```rust
+use fastembed::{TextEmbedding, InitOptions, EmbeddingModel};
+use rank_refine::scoring::{DenseScorer, Scorer};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize model (downloads on first run, ~30MB)
+    let model = TextEmbedding::try_new(InitOptions {
+        model_name: EmbeddingModel::AllMiniLML6V2,
+        ..Default::default()
+    })?;
+
+    // Embed
+    let query = model.embed(vec!["What is Rust?"], None)?;
+    let docs = model.embed(vec![
+        "Rust is a systems programming language.",
+        "Python is great for data science.",
+    ], None)?;
+
+    // Rank with rank-refine
+    let scorer = DenseScorer::Cosine;
+    let doc_refs: Vec<(usize, &[f32])> = docs.iter()
+        .enumerate()
+        .map(|(i, e)| (i, e.as_slice()))
+        .collect();
+    let ranked = scorer.rank(&query[0], &doc_refs);
+
+    println!("Best match: doc {}", ranked[0].0);
+    Ok(())
+}
 ```
 
 ## Modules
 
-| Module | Method |
-|--------|--------|
+| Module | Purpose |
+|--------|---------|
 | `matryoshka` | MRL tail dimension refinement |
-| `colbert` | MaxSim late interaction |
-| `crossencoder` | Cross-encoder trait (BYOM) |
-| `simd` | Vector ops (AVX2/NEON) |
+| `colbert` | MaxSim late interaction + token pooling |
+| `crossencoder` | Cross-encoder trait (implement for your model) |
+| `simd` | Vector ops (AVX2/NEON accelerated) |
+| `scoring` | Unified `Scorer`, `TokenScorer`, `Pooler` traits |
+
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| `hierarchical` | Ward's method clustering via `kodama` (better pooling at 4x+ compression) |
 
 ## Related
 
-See [`rank-fusion`](https://crates.io/crates/rank-fusion) for combining ranked lists (RRF, CombMNZ, Borda).
+- [`rank-fusion`](https://crates.io/crates/rank-fusion) — Combine ranked lists (RRF, CombMNZ, Borda)
 
 ## License
 

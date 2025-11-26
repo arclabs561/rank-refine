@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.7.6] - 2025-11-26
+
+### Added
+- **Improved README**: Clear e2e guidance with embedding source table (fastembed, candle, ort)
+- **Full fastembed example**: Shows real-world integration pattern
+- **8 integration tests**: Realistic e2e workflows:
+  - `e2e_two_stage_dense_then_colbert`: Dense → ColBERT pipeline
+  - `e2e_matryoshka_refinement`: MRL head/tail workflow
+  - `e2e_token_pooling_storage_workflow`: Pooling for storage efficiency
+  - `e2e_cross_encoder_rerank`: Cross-encoder trait implementation
+  - `e2e_hybrid_scoring_with_normalization`: Score normalization + blending
+  - `e2e_full_pipeline_with_config`: Complete pipeline with RefineConfig
+  - `e2e_trait_based_scoring`: Polymorphic scoring via traits
+  - `e2e_edge_cases`: Empty inputs, single tokens, pooling edge cases
+
+### Changed
+- README now clearly explains "Bring Your Own Model" design
+- Added embedding source comparison table
+
 ## [0.7.5] - 2025-11-26
 
 ### Added
