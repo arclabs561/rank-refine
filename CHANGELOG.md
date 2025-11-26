@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.9] - 2025-11-26
+
+### Fixed
+- Escaped `[0,1]` in doc comments to fix rustdoc warnings
+
 ## [0.7.8] - 2025-11-26
 
 ### Changed

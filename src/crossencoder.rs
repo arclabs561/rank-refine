@@ -58,7 +58,7 @@ pub fn rerank<I: Clone, M: CrossEncoderModel>(
 
 /// Blend cross-encoder scores with original scores.
 ///
-/// CE scores normalized to [0,1]. `alpha`: 0 = all CE, 1 = all original.
+/// CE scores normalized to \[0,1\]. `alpha`: 0 = all CE, 1 = all original.
 #[must_use]
 pub fn refine<I: Clone, M: CrossEncoderModel>(
     model: &M,

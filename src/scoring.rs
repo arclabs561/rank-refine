@@ -151,7 +151,7 @@ pub fn blend(score_a: f32, score_b: f32, alpha: f32) -> f32 {
     (1.0 - alpha).mul_add(score_b, alpha * score_a)
 }
 
-/// Normalize scores to [0, 1] range.
+/// Normalize scores to \[0, 1\] range.
 ///
 /// Returns original scores if all values are equal (avoids division by zero).
 #[must_use]
