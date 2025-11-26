@@ -148,6 +148,27 @@ impl std::error::Error for RefineError {}
 pub type Result<T> = std::result::Result<T, RefineError>;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Conversion Utilities
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Convert owned token embeddings to borrowed slices.
+///
+/// This is the idiomatic pattern for working with the SIMD functions:
+///
+/// ```rust
+/// use rank_refine::{simd, as_slices};
+///
+/// let tokens: Vec<Vec<f32>> = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+/// let refs = as_slices(&tokens);
+/// // Now you can pass `&refs` to simd::maxsim, scoring traits, etc.
+/// ```
+#[inline]
+#[must_use]
+pub fn as_slices(tokens: &[Vec<f32>]) -> Vec<&[f32]> {
+    tokens.iter().map(Vec::as_slice).collect()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Sorting Utilities
 // ─────────────────────────────────────────────────────────────────────────────
 

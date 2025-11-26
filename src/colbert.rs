@@ -375,12 +375,12 @@ pub fn rank_with_top_k<I: Clone>(
     docs: &[(I, Vec<Vec<f32>>)],
     top_k: Option<usize>,
 ) -> Vec<(I, f32)> {
-    let query_refs: Vec<&[f32]> = query.iter().map(Vec::as_slice).collect();
+    let query_refs = crate::as_slices(query);
 
     let mut results: Vec<(I, f32)> = docs
         .iter()
         .map(|(id, doc_tokens)| {
-            let doc_refs: Vec<&[f32]> = doc_tokens.iter().map(Vec::as_slice).collect();
+            let doc_refs = crate::as_slices(doc_tokens);
             let score = simd::maxsim(&query_refs, &doc_refs);
             (id.clone(), score)
         })
@@ -433,14 +433,14 @@ pub fn refine_with_config<I: Clone + Eq + std::hash::Hash>(
     use std::collections::HashMap;
 
     let doc_map: HashMap<&I, &Vec<Vec<f32>>> = docs.iter().map(|(id, toks)| (id, toks)).collect();
-    let query_refs: Vec<&[f32]> = query.iter().map(Vec::as_slice).collect();
+    let query_refs = crate::as_slices(query);
     let alpha = config.alpha;
 
     let mut results: Vec<(I, f32)> = candidates
         .iter()
         .filter_map(|(id, orig_score)| {
             let doc_tokens = doc_map.get(id)?;
-            let doc_refs: Vec<&[f32]> = doc_tokens.iter().map(Vec::as_slice).collect();
+            let doc_refs = crate::as_slices(doc_tokens);
             let maxsim_score = simd::maxsim(&query_refs, &doc_refs);
             let blended = (1.0 - alpha).mul_add(maxsim_score, alpha * orig_score);
             Some((id.clone(), blended))

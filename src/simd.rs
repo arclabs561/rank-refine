@@ -100,6 +100,40 @@ pub fn maxsim_cosine(query_tokens: &[&[f32]], doc_tokens: &[&[f32]]) -> f32 {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Convenience wrappers for owned vectors
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// `MaxSim` for owned token vectors (convenience wrapper).
+///
+/// Equivalent to `maxsim(&as_slices(query), &as_slices(doc))` but more ergonomic.
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::simd::maxsim_vecs;
+///
+/// let query = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+/// let doc = vec![vec![0.9, 0.1], vec![0.1, 0.9]];
+/// let score = maxsim_vecs(&query, &doc);
+/// ```
+#[inline]
+#[must_use]
+pub fn maxsim_vecs(query_tokens: &[Vec<f32>], doc_tokens: &[Vec<f32>]) -> f32 {
+    let q = crate::as_slices(query_tokens);
+    let d = crate::as_slices(doc_tokens);
+    maxsim(&q, &d)
+}
+
+/// `MaxSim` cosine for owned token vectors (convenience wrapper).
+#[inline]
+#[must_use]
+pub fn maxsim_cosine_vecs(query_tokens: &[Vec<f32>], doc_tokens: &[Vec<f32>]) -> f32 {
+    let q = crate::as_slices(query_tokens);
+    let d = crate::as_slices(doc_tokens);
+    maxsim_cosine(&q, &d)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Portable fallback
 // ─────────────────────────────────────────────────────────────────────────────
 

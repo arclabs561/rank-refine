@@ -113,15 +113,52 @@ impl LateInteractionScorer {
 ///
 /// Multi-vector representations preserve token-level semantics, enabling
 /// fine-grained matching that outperforms dense scoring on complex queries.
+///
+/// # Convenience Methods
+///
+/// The trait provides both borrowed (`&[&[f32]]`) and owned (`&[Vec<f32>]`)
+/// variants. Use whichever matches your data:
+///
+/// ```rust
+/// use rank_refine::scoring::{TokenScorer, LateInteractionScorer};
+///
+/// let scorer = LateInteractionScorer::MaxSimDot;
+///
+/// // With owned vectors (common when loading from storage)
+/// let q_owned = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+/// let d_owned = vec![vec![0.9, 0.1]];
+/// let score = scorer.score_vecs(&q_owned, &d_owned);
+/// ```
 pub trait TokenScorer {
     /// Score similarity between query tokens and document tokens.
     fn score_tokens(&self, query: &[&[f32]], doc: &[&[f32]]) -> f32;
+
+    /// Score with owned vectors (convenience wrapper).
+    fn score_vecs(&self, query: &[Vec<f32>], doc: &[Vec<f32>]) -> f32 {
+        let q = crate::as_slices(query);
+        let d = crate::as_slices(doc);
+        self.score_tokens(&q, &d)
+    }
 
     /// Rank documents by token-level score (descending).
     fn rank_tokens<I: Clone>(&self, query: &[&[f32]], docs: &[(I, Vec<&[f32]>)]) -> Vec<(I, f32)> {
         let mut results: Vec<(I, f32)> = docs
             .iter()
             .map(|(id, doc_tokens)| (id.clone(), self.score_tokens(query, doc_tokens)))
+            .collect();
+        crate::sort_scored_desc(&mut results);
+        results
+    }
+
+    /// Rank with owned document vectors (convenience wrapper).
+    fn rank_vecs<I: Clone>(&self, query: &[Vec<f32>], docs: &[(I, Vec<Vec<f32>>)]) -> Vec<(I, f32)> {
+        let q = crate::as_slices(query);
+        let mut results: Vec<(I, f32)> = docs
+            .iter()
+            .map(|(id, doc_tokens)| {
+                let d = crate::as_slices(doc_tokens);
+                (id.clone(), self.score_tokens(&q, &d))
+            })
             .collect();
         crate::sort_scored_desc(&mut results);
         results
@@ -317,6 +354,29 @@ mod tests {
         let scores: Vec<f32> = vec![];
         let normalized = normalize_scores(&scores);
         assert!(normalized.is_empty());
+    }
+
+    #[test]
+    fn test_token_scorer_score_vecs() {
+        let scorer = LateInteractionScorer::MaxSimDot;
+        let query = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+        let doc = vec![vec![0.9, 0.1], vec![0.1, 0.9]];
+
+        let score = scorer.score_vecs(&query, &doc);
+        assert!(score > 1.5); // both query tokens find good matches
+    }
+
+    #[test]
+    fn test_token_scorer_rank_vecs() {
+        let scorer = LateInteractionScorer::MaxSimDot;
+        let query = vec![vec![1.0, 0.0]];
+        let docs = vec![
+            ("d1", vec![vec![0.0, 1.0]]),  // orthogonal
+            ("d2", vec![vec![1.0, 0.0]]),  // aligned
+        ];
+
+        let ranked = scorer.rank_vecs(&query, &docs);
+        assert_eq!(ranked[0].0, "d2"); // aligned doc should rank first
     }
 }
 
