@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.10] - 2025-11-26
+
+### Added
+- Mutation-killing unit tests in `simd` and `colbert` modules
+- Tests for exact mathematical properties (cosine zero-norm, MaxSim sum-of-max)
+- Tests for pooling count accuracy and refine alpha behavior
+
 ## [0.7.9] - 2025-11-26
 
 ### Fixed
