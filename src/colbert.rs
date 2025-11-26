@@ -265,7 +265,7 @@ pub fn pool_tokens_sequential(tokens: &[Vec<f32>], window_size: usize) -> Vec<Ve
         .collect()
 }
 
-/// Pool tokens with protected indices (e.g., [CLS], [D] markers).
+/// Pool tokens with protected indices (e.g., `[CLS]`, `[D]` markers).
 ///
 /// Protected tokens are preserved unchanged and not included in clustering.
 #[must_use]
