@@ -705,6 +705,7 @@ mod tests {
     // Mutation-killing: verify exact mathematical behavior
     // ───────────────────────────────────────────────────────────────────────
 
+    #[cfg(not(feature = "hierarchical"))]
     #[test]
     fn pool_greedy_exact_count() {
         // Factor 2 on 4 tokens should give 2

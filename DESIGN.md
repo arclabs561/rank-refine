@@ -26,18 +26,39 @@ but yields 5-15% better recall on complex queries.
 
 ## Token Pooling
 
-Storage can be reduced via token pooling without significant quality loss:
+Storage can be reduced via token pooling without significant quality loss. From
+[Clavié et al. (2024)](https://arxiv.org/abs/2409.14683):
 
-- **Factor 2**: 50% storage reduction, ~1% recall drop
-- **Factor 3**: 66% storage reduction, ~2% recall drop
+- **Factor 2 (50% reduction)**: Virtually no retrieval degradation
+- **Factor 3-4 (66-75% reduction)**: <5% degradation on most datasets
 
-Two strategies:
+Key insight: Pooling happens at **indexing time only** — no query-time processing needed.
 
-1. **Hierarchical clustering** (Ward's method via `kodama`): Groups semantically similar
-   tokens. Higher quality but O(n²) complexity.
+### Clustering Methods
 
-2. **Sequential pooling**: Averages adjacent tokens in sliding windows. Faster but
-   less semantically aware.
+Research shows **Ward's hierarchical clustering** outperforms k-means for embedding pooling:
+
+| Method | Quality | Speed | Best For |
+|--------|---------|-------|----------|
+| Ward (hierarchical) | Highest | O(n²) | Aggressive compression (4x+) |
+| Greedy clustering | Good | O(n) | Moderate compression (2-3x) |
+| Sequential | Lowest | O(n) | Speed-critical, position-aware |
+
+Ward produces more **compact, homogeneous clusters** and handles ambiguous tokens better.
+
+### Implementation
+
+```rust
+// Aggressive compression with highest quality
+#[cfg(feature = "hierarchical")]
+let pooled = pool_tokens_hierarchical(&tokens, 4);
+
+// Balanced (default)
+let pooled = pool_tokens(&tokens, 2);
+
+// Preserve special tokens
+let pooled = pool_tokens_with_protected(&tokens, 2, 2); // protect first 2
+```
 
 Protected tokens (like `[CLS]` and `[D]` markers) can be preserved during pooling.
 
@@ -48,6 +69,18 @@ Protected tokens (like `[CLS]` and `[D]` markers) can be preserved during poolin
 - **crossencoder** — BYOM trait for transformer-based scoring
 - **simd** — AVX2+FMA (x86_64), NEON (aarch64), portable fallback
 - **scoring** — Unified `Scorer` and `TokenScorer` traits for interoperability
+
+### Matryoshka Note
+
+Current implementation supports **dimension truncation** (standard MRL). The emerging
+**2D Matryoshka** approach (Wang et al., 2024) adds **layer truncation** — using embeddings
+from intermediate transformer layers for even more flexibility. This would require:
+
+1. Models trained with 2D Matryoshka loss
+2. API to specify both `target_dims` and `target_layer`
+
+The current `matryoshka::refine` function handles dimension-based refinement correctly
+and is compatible with any MRL-trained model (e.g., Nomic, Cohere v3, OpenAI text-embedding-3).
 
 ## Architecture
 
@@ -103,9 +136,18 @@ Sorting uses `f32::total_cmp` for deterministic ordering:
 
 ## References
 
-- [Matryoshka](https://arxiv.org/abs/2205.13147) — MRL embeddings
-- [ColBERT](https://arxiv.org/abs/2004.12832) — Late interaction retrieval
+### Core Techniques
+- [Matryoshka](https://arxiv.org/abs/2205.13147) — MRL embeddings (Kusupati et al., 2022)
+- [2D Matryoshka](https://arxiv.org/abs/2411.17299) — Layer + dimension truncation (Wang et al., 2024)
+- [ColBERT](https://arxiv.org/abs/2004.12832) — Late interaction retrieval (Khattab & Zaharia, 2020)
 - [PLAID](https://arxiv.org/abs/2205.09707) — Efficient ColBERT serving
+
+### Token Pooling
+- [Token Pooling](https://arxiv.org/abs/2409.14683) — 50-75% storage reduction (Clavié et al., 2024)
+- [kodama](https://docs.rs/kodama) — Ward's hierarchical clustering for Rust
+
+### Production Systems
 - [ColBERT-serve](https://arxiv.org/abs/2501.02065) — Memory-mapped ColBERT (ECIR 2025)
 - [Jina-ColBERT-v2](https://arxiv.org/abs/2408.16672) — Multilingual + Matryoshka ColBERT
-- [kodama](https://docs.rs/kodama) — Hierarchical clustering for token pooling
+- [fastembed-rs](https://docs.rs/fastembed) — Rust embedding generation via ONNX
+- [ort](https://docs.rs/ort) — ONNX Runtime bindings for cross-encoder inference

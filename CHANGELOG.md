@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.12] - 2025-11-26
+
+### Changed
+- Updated DESIGN.md with academic citations (Clavié 2024, Wang 2024)
+- Added clustering method comparison table
+- Documented 2D Matryoshka as future direction
+- Added references to fastembed-rs and ort for production usage
+
 ## [0.7.11] - 2025-11-26
 
 ### Added
