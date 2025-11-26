@@ -62,12 +62,30 @@ pub mod matryoshka;
 pub mod scoring;
 pub mod simd;
 
-/// Common imports.
+/// Common imports for reranking.
+///
+/// ```rust
+/// use rank_refine::prelude::*;
+/// ```
 pub mod prelude {
-    pub use crate::as_slices;
+    // Traits
     pub use crate::scoring::{DenseScorer, LateInteractionScorer, Pooler, Scorer, TokenScorer};
-    pub use crate::simd::{cosine, dot, maxsim, maxsim_vecs};
+
+    // SIMD functions
+    pub use crate::simd::{cosine, dot, maxsim, maxsim_cosine, maxsim_vecs, norm};
+
+    // Matryoshka (MRL) refinement
+    pub use crate::matryoshka::{refine as mrl_refine, try_refine as mrl_try_refine};
     pub use crate::RefineConfig;
+
+    // ColBERT late interaction
+    pub use crate::colbert::{pool_tokens, rank as colbert_rank};
+
+    // Cross-encoder
+    pub use crate::crossencoder::CrossEncoderModel;
+
+    // Utilities
+    pub use crate::{as_slices, RefineError};
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
