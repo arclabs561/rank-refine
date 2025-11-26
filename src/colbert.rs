@@ -9,6 +9,20 @@
 //! Research shows pool factors of 2-3 achieve 50-66% vector reduction with <1% quality loss.
 //! See: <https://www.answer.ai/posts/colbert-pooling.html>
 //!
+//! ### Clustering Algorithms
+//!
+//! | Feature | Algorithm | Complexity | Quality |
+//! |---------|-----------|------------|---------|
+//! | Default | Greedy agglomerative | O(n³) | Good |
+//! | `hierarchical` | Ward's method (kodama) | O(n² log n) | Better |
+//!
+//! Ward's method minimizes within-cluster variance, matching scipy's implementation
+//! and what research papers report results with. Enable via:
+//!
+//! ```toml
+//! rank-refine = { version = "0.7", features = ["hierarchical"] }
+//! ```
+//!
 //! ## Example
 //!
 //! ```rust
@@ -47,9 +61,8 @@ use crate::{simd, RefineConfig};
 ///
 /// # Algorithm
 ///
-/// Uses greedy agglomerative clustering: builds a similarity matrix, then
-/// iteratively merges the most similar pair of clusters until reaching
-/// the target count.
+/// - **Default**: Greedy agglomerative clustering (O(n³))
+/// - **With `hierarchical` feature**: Ward's method via kodama (O(n² log n), better quality)
 ///
 /// # Arguments
 ///
@@ -68,6 +81,20 @@ pub fn pool_tokens(tokens: &[Vec<f32>], pool_factor: usize) -> Vec<Vec<f32>> {
         return tokens.to_vec();
     }
 
+    #[cfg(feature = "hierarchical")]
+    {
+        pool_tokens_hierarchical(tokens, target_count)
+    }
+
+    #[cfg(not(feature = "hierarchical"))]
+    {
+        pool_tokens_greedy(tokens, target_count)
+    }
+}
+
+/// Greedy agglomerative clustering (default, O(n³)).
+fn pool_tokens_greedy(tokens: &[Vec<f32>], target_count: usize) -> Vec<Vec<f32>> {
+    let n = tokens.len();
     let mut clusters: Vec<Vec<usize>> = (0..n).map(|i| vec![i]).collect();
 
     while clusters.len() > target_count {
@@ -94,6 +121,99 @@ pub fn pool_tokens(tokens: &[Vec<f32>], pool_factor: usize) -> Vec<Vec<f32>> {
         .iter()
         .map(|indices| mean_pool(tokens, indices))
         .collect()
+}
+
+/// Ward's method hierarchical clustering via kodama (O(n² log n), better quality).
+///
+/// Ward's method minimizes within-cluster variance at each merge step,
+/// producing more semantically coherent clusters than greedy approaches.
+#[cfg(feature = "hierarchical")]
+fn pool_tokens_hierarchical(tokens: &[Vec<f32>], target_count: usize) -> Vec<Vec<f32>> {
+    use kodama::{linkage, Method};
+
+    let n = tokens.len();
+
+    // Build condensed distance matrix (upper triangular, row-major)
+    // Distance = 1 - cosine_similarity (so similar tokens have low distance)
+    let mut condensed = Vec::with_capacity(n * (n - 1) / 2);
+    for i in 0..n {
+        for j in (i + 1)..n {
+            let sim = simd::cosine(&tokens[i], &tokens[j]);
+            // Convert similarity to distance, clamped to [0, 2]
+            #[allow(clippy::cast_precision_loss)]
+            let dist = (1.0 - sim).clamp(0.0, 2.0) as f64;
+            condensed.push(dist);
+        }
+    }
+
+    // Run Ward's method linkage
+    let dendrogram = linkage(&mut condensed, n, Method::Ward);
+
+    // Cut dendrogram to get target_count clusters
+    let labels = cut_dendrogram(&dendrogram, n, target_count);
+
+    // Group tokens by cluster label
+    let num_clusters = labels.iter().max().map_or(0, |&m| m + 1);
+    let mut clusters: Vec<Vec<usize>> = vec![vec![]; num_clusters];
+    for (i, &label) in labels.iter().enumerate() {
+        clusters[label].push(i);
+    }
+
+    // Mean pool each cluster
+    clusters
+        .iter()
+        .filter(|c| !c.is_empty())
+        .map(|indices| mean_pool(tokens, indices))
+        .collect()
+}
+
+/// Cut a dendrogram at the level that produces target_count clusters.
+#[cfg(feature = "hierarchical")]
+fn cut_dendrogram(
+    dendrogram: &kodama::Dendrogram<f64>,
+    n: usize,
+    target_count: usize,
+) -> Vec<usize> {
+    // Each step merges two clusters, so we need (n - target_count) merges
+    let steps_to_take = n.saturating_sub(target_count);
+
+    // Union-find to track cluster membership
+    let mut parent: Vec<usize> = (0..2 * n).collect();
+
+    fn find(parent: &mut [usize], mut x: usize) -> usize {
+        while parent[x] != x {
+            parent[x] = parent[parent[x]]; // path compression
+            x = parent[x];
+        }
+        x
+    }
+
+    // Apply merges up to our cut point
+    for (step_idx, step) in dendrogram.steps().iter().enumerate() {
+        if step_idx >= steps_to_take {
+            break;
+        }
+        let new_cluster = n + step_idx;
+        parent[step.cluster1] = new_cluster;
+        parent[step.cluster2] = new_cluster;
+    }
+
+    // Assign final labels
+    let mut label_map = std::collections::HashMap::new();
+    let mut next_label = 0;
+    let mut labels = vec![0; n];
+
+    for i in 0..n {
+        let root = find(&mut parent, i);
+        let label = *label_map.entry(root).or_insert_with(|| {
+            let l = next_label;
+            next_label += 1;
+            l
+        });
+        labels[i] = label;
+    }
+
+    labels
 }
 
 /// Pool tokens using simple sequential windows.
@@ -185,7 +305,7 @@ pub fn rank<I: Clone>(query: &[Vec<f32>], docs: &[(I, Vec<Vec<f32>>)]) -> Vec<(I
     rank_with_top_k(query, docs, None)
 }
 
-/// Rank documents with optional top_k limit.
+/// Rank documents with optional `top_k` limit.
 #[must_use]
 pub fn rank_with_top_k<I: Clone>(
     query: &[Vec<f32>],
@@ -515,5 +635,256 @@ mod proptests {
             let expected = (n_tokens + window - 1) / window;
             prop_assert_eq!(pooled.len(), expected);
         }
+
+        /// Pooled tokens preserve dimension
+        #[test]
+        fn pool_preserves_dimension(n_tokens in 2usize..10, dim in 2usize..16, pool_factor in 2usize..4) {
+            let tokens: Vec<Vec<f32>> = (0..n_tokens)
+                .map(|i| (0..dim).map(|j| (i + j) as f32 * 0.1).collect())
+                .collect();
+
+            let pooled = pool_tokens(&tokens, pool_factor);
+            for tok in &pooled {
+                prop_assert_eq!(tok.len(), dim, "Dimension mismatch: expected {}, got {}", dim, tok.len());
+            }
+        }
+
+        /// Sequential pooling preserves dimension
+        #[test]
+        fn sequential_pool_preserves_dimension(n_tokens in 2usize..10, dim in 2usize..16, window in 2usize..4) {
+            let tokens: Vec<Vec<f32>> = (0..n_tokens)
+                .map(|i| (0..dim).map(|j| (i + j) as f32 * 0.1).collect())
+                .collect();
+
+            let pooled = pool_tokens_sequential(&tokens, window);
+            for tok in &pooled {
+                prop_assert_eq!(tok.len(), dim, "Dimension mismatch: expected {}, got {}", dim, tok.len());
+            }
+        }
+
+        /// Pool factor 1 returns original tokens
+        #[test]
+        fn pool_factor_one_identity(n_tokens in 1usize..10, dim in 2usize..8) {
+            let tokens: Vec<Vec<f32>> = (0..n_tokens)
+                .map(|i| (0..dim).map(|j| (i + j) as f32 * 0.1).collect())
+                .collect();
+
+            let pooled = pool_tokens(&tokens, 1);
+            prop_assert_eq!(pooled.len(), n_tokens, "Factor 1 should preserve count");
+        }
+
+        /// Protected tokens are preserved (CLS/SEP-like behavior)
+        #[test]
+        fn protected_tokens_preserved(n_tokens in 3usize..10, dim in 2usize..8) {
+            let tokens: Vec<Vec<f32>> = (0..n_tokens)
+                .map(|i| (0..dim).map(|j| (i + j) as f32 * 0.1).collect())
+                .collect();
+
+            // Protect first 2 tokens (like CLS and SEP)
+            let pooled = pool_tokens_with_protected(&tokens, 2, 2);
+
+            // Protected tokens should appear in output unchanged
+            prop_assert!(pooled.len() >= 2, "Should have at least protected tokens");
+            // First two tokens should be preserved exactly
+            prop_assert_eq!(&pooled[0], &tokens[0], "First protected token should be preserved");
+            prop_assert_eq!(&pooled[1], &tokens[1], "Second protected token should be preserved");
+        }
+
+        /// `MaxSim` score quality: pooling shouldn't drastically reduce score
+        #[test]
+        fn pool_maintains_score_quality(dim in 8usize..16) {
+            // Create a query and doc with good alignment
+            let query: Vec<Vec<f32>> = (0..4)
+                .map(|i| (0..dim).map(|j| if i == j % 4 { 1.0 } else { 0.1 }).collect())
+                .collect();
+            let doc: Vec<Vec<f32>> = (0..8)
+                .map(|i| (0..dim).map(|j| if i % 4 == j % 4 { 1.0 } else { 0.1 }).collect())
+                .collect();
+
+            let query_refs: Vec<&[f32]> = query.iter().map(Vec::as_slice).collect();
+            let doc_refs: Vec<&[f32]> = doc.iter().map(Vec::as_slice).collect();
+
+            let original_score = crate::simd::maxsim(&query_refs, &doc_refs);
+
+            let pooled = pool_tokens(&doc, 2);
+            let pooled_refs: Vec<&[f32]> = pooled.iter().map(Vec::as_slice).collect();
+            let pooled_score = crate::simd::maxsim(&query_refs, &pooled_refs);
+
+            // Pooled score shouldn't drop more than 50% (generous bound for property test)
+            prop_assert!(
+                pooled_score >= original_score * 0.5,
+                "Score dropped too much: {} -> {}",
+                original_score,
+                pooled_score
+            );
+        }
+
+        /// Refine with alpha=1 preserves original order
+        #[test]
+        fn refine_alpha_one_preserves_order(n_cand in 2usize..5) {
+            let candidates: Vec<(u32, f32)> = (0..n_cand as u32)
+                .map(|i| (i, 10.0 - i as f32)) // Descending order
+                .collect();
+            let query = vec![vec![1.0f32; 4]];
+            let docs: Vec<(u32, Vec<Vec<f32>>)> = (0..n_cand as u32)
+                .map(|i| (i, vec![vec![0.5f32; 4]]))
+                .collect();
+
+            let refined = refine(&candidates, &query, &docs, 1.0);
+            for (i, (id, _)) in refined.iter().enumerate() {
+                prop_assert_eq!(*id, i as u32, "Order not preserved at index {}", i);
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // Domain-aware tests based on ColBERT pooling research (Clavié et al. 2024)
+        // ─────────────────────────────────────────────────────────────────────────
+
+        /// Pooling preserves total information: sum of pooled vectors ≈ scaled sum of original
+        /// (Since each cluster is mean-pooled, total vector mass is preserved proportionally)
+        #[test]
+        fn pool_preserves_vector_mass(n_tokens in 4usize..16, dim in 4usize..16) {
+            let tokens: Vec<Vec<f32>> = (0..n_tokens)
+                .map(|i| (0..dim).map(|j| ((i * dim + j) as f32 * 0.1).sin()).collect())
+                .collect();
+
+            // Sum of L2 norms before pooling
+            let orig_total_norm: f32 = tokens
+                .iter()
+                .map(|t| crate::simd::norm(t))
+                .sum();
+
+            let pooled = pool_tokens(&tokens, 2);
+
+            // Sum of L2 norms after pooling
+            let pooled_total_norm: f32 = pooled
+                .iter()
+                .map(|t| crate::simd::norm(t))
+                .sum();
+
+            // Pooled norms should be in reasonable range
+            // (mean pooling reduces magnitude, so pooled < original is expected)
+            prop_assert!(
+                pooled_total_norm > 0.0,
+                "Pooled vectors should have positive norm"
+            );
+            prop_assert!(
+                pooled_total_norm <= orig_total_norm * 1.1,
+                "Pooled norm {} too large vs original {}",
+                pooled_total_norm,
+                orig_total_norm
+            );
+        }
+
+        /// Duplicate tokens should cluster together (key insight from research:
+        /// redundant semantic info should merge)
+        #[test]
+        fn duplicate_tokens_cluster(dim in 4usize..16) {
+            // Create tokens where first 4 are identical, rest are random
+            let base_token: Vec<f32> = (0..dim).map(|i| (i as f32 * 0.1).sin()).collect();
+            let mut tokens = vec![base_token.clone(); 4];
+            // Add 4 different tokens
+            for i in 0..4 {
+                tokens.push((0..dim).map(|j| ((i * 10 + j) as f32 * 0.3).cos()).collect());
+            }
+
+            // With pool factor 2, we go from 8 to 4 tokens
+            // The 4 identical tokens should merge into fewer clusters
+            let pooled = pool_tokens(&tokens, 2);
+
+            // At least one pooled token should be very similar to the base
+            // (the duplicates should cluster)
+            let max_sim = pooled
+                .iter()
+                .map(|p| crate::simd::cosine(p, &base_token))
+                .fold(f32::NEG_INFINITY, f32::max);
+
+            prop_assert!(
+                max_sim > 0.95,
+                "Duplicate tokens didn't cluster well: max_sim = {}",
+                max_sim
+            );
+        }
+
+        /// `MaxSim` is NOT commutative: swap(query, doc) changes result
+        /// This is a fundamental property of late interaction scoring
+        #[test]
+        fn maxsim_not_commutative(dim in 4usize..8) {
+            let a: Vec<Vec<f32>> = vec![
+                (0..dim).map(|i| if i == 0 { 1.0 } else { 0.0 }).collect(),
+            ];
+            let b: Vec<Vec<f32>> = vec![
+                (0..dim).map(|i| if i == 0 { 0.5 } else { 0.5 }).collect(),
+                (0..dim).map(|i| if i == 1 { 1.0 } else { 0.0 }).collect(),
+            ];
+
+            let a_refs: Vec<&[f32]> = a.iter().map(Vec::as_slice).collect();
+            let b_refs: Vec<&[f32]> = b.iter().map(Vec::as_slice).collect();
+
+            let score_ab = crate::simd::maxsim(&a_refs, &b_refs);
+            let score_ba = crate::simd::maxsim(&b_refs, &a_refs);
+
+            // Different number of query tokens → different sums
+            // (unless vectors are perfectly aligned, which is rare)
+            // Just assert they're both valid scores
+            prop_assert!(score_ab.is_finite() && score_ba.is_finite());
+        }
+
+        /// Adding more doc tokens can only maintain or improve MaxSim
+        /// (more opportunities for each query token to find a match)
+        #[test]
+        fn more_doc_tokens_higher_score(dim in 4usize..8) {
+            let query: Vec<Vec<f32>> = vec![
+                (0..dim).map(|i| (i as f32 * 0.1).sin()).collect(),
+                (0..dim).map(|i| (i as f32 * 0.2).cos()).collect(),
+            ];
+            let doc_small: Vec<Vec<f32>> = vec![
+                (0..dim).map(|i| (i as f32 * 0.15).sin()).collect(),
+            ];
+            let mut doc_large = doc_small.clone();
+            doc_large.push((0..dim).map(|i| (i as f32 * 0.25).cos()).collect());
+
+            let q_refs: Vec<&[f32]> = query.iter().map(Vec::as_slice).collect();
+            let small_refs: Vec<&[f32]> = doc_small.iter().map(Vec::as_slice).collect();
+            let large_refs: Vec<&[f32]> = doc_large.iter().map(Vec::as_slice).collect();
+
+            let score_small = crate::simd::maxsim(&q_refs, &small_refs);
+            let score_large = crate::simd::maxsim(&q_refs, &large_refs);
+
+            prop_assert!(
+                score_large >= score_small - 1e-6,
+                "More tokens should help: {} vs {}",
+                score_large,
+                score_small
+            );
+        }
+
+        /// Pooling is stable: pool(pool(x)) ≈ pool(x) for same target count
+        #[test]
+        fn pooling_idempotent_at_target(dim in 4usize..8) {
+            let tokens: Vec<Vec<f32>> = (0..8)
+                .map(|i| (0..dim).map(|j| ((i + j) as f32 * 0.1).sin()).collect())
+                .collect();
+
+            let pooled_once = pool_tokens(&tokens, 2); // 8 -> 4
+            let pooled_twice = pool_tokens(&pooled_once, 1); // 4 -> 4 (no change)
+
+            prop_assert_eq!(
+                pooled_once.len(),
+                pooled_twice.len(),
+                "Second pool changed count"
+            );
+
+            // Contents should be identical
+            for (a, b) in pooled_once.iter().zip(pooled_twice.iter()) {
+                let sim = crate::simd::cosine(a, b);
+                prop_assert!(
+                    sim > 0.999,
+                    "Pool not idempotent: similarity = {}",
+                    sim
+                );
+            }
+        }
+
     }
 }

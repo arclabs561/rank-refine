@@ -3,7 +3,7 @@
 //! This module provides a common abstraction over different scoring strategies:
 //!
 //! - **Dense scoring**: Single-vector embeddings (cosine, dot product)
-//! - **Late interaction**: Multi-vector embeddings (MaxSim, ColBERT)
+//! - **Late interaction**: Multi-vector embeddings (`MaxSim`, `ColBERT`)
 //! - **Cross-encoder**: Transformer-based scoring (external models)
 //!
 //! # Why Late Interaction?
@@ -14,7 +14,7 @@
 //! | Approach | Representation | Query Time | Quality |
 //! |----------|----------------|------------|---------|
 //! | Dense | `Vec<f32>` | O(1) dot | Good |
-//! | Late Interaction | `Vec<Vec<f32>>` | O(m*n) MaxSim | Better |
+//! | Late Interaction | `Vec<Vec<f32>>` | O(m*n) `MaxSim` | Better |
 //! | Cross-encoder | Query + Doc text | O(n) inference | Best |
 //!
 //! Use dense for fast first-stage retrieval, then refine with late interaction
@@ -94,9 +94,9 @@ impl Scorer for DenseScorer {
 /// Scoring strategy for late interaction (multi-vector) embeddings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LateInteractionScorer {
-    /// MaxSim with dot product (ColBERT-style).
+    /// `MaxSim` with dot product (`ColBERT`-style).
     MaxSimDot,
-    /// MaxSim with cosine similarity.
+    /// `MaxSim` with cosine similarity.
     MaxSimCosine,
 }
 
@@ -326,6 +326,92 @@ mod proptests {
             for &s in &normalized {
                 prop_assert!(s >= -0.01 && s <= 1.01, "Score {} out of bounds", s);
             }
+        }
+
+        /// Normalized scores preserve relative ordering
+        #[test]
+        fn normalize_preserves_order(scores in proptest::collection::vec(-100.0f32..100.0, 2..10)) {
+            let normalized = normalize_scores(&scores);
+            for i in 0..scores.len() {
+                for j in 0..scores.len() {
+                    let orig_cmp = scores[i].total_cmp(&scores[j]);
+                    let norm_cmp = normalized[i].total_cmp(&normalized[j]);
+                    prop_assert_eq!(orig_cmp, norm_cmp, "Order changed at indices ({}, {})", i, j);
+                }
+            }
+        }
+
+        /// Blend is linear in alpha
+        #[test]
+        fn blend_is_linear(a in -10.0f32..10.0, b in -10.0f32..10.0, alpha in 0.0f32..1.0) {
+            let blended = blend(a, b, alpha);
+            let expected = alpha * a + (1.0 - alpha) * b;
+            prop_assert!((blended - expected).abs() < 1e-5, "blend({}, {}, {}) = {}, expected {}", a, b, alpha, blended, expected);
+        }
+
+        /// Rank produces sorted output (descending)
+        #[test]
+        fn scorer_rank_is_sorted(n in 2usize..10, dim in 2usize..8) {
+            let scorer = DenseScorer::Cosine;
+            let query: Vec<f32> = (0..dim).map(|i| (i + 1) as f32).collect();
+            let docs: Vec<(u32, Vec<f32>)> = (0..n as u32)
+                .map(|i| (i, (0..dim).map(|j| ((i as usize * dim + j) % 10) as f32).collect()))
+                .collect();
+            let doc_refs: Vec<(u32, &[f32])> = docs.iter()
+                .map(|(id, v)| (*id, v.as_slice()))
+                .collect();
+
+            let ranked = scorer.rank(&query, &doc_refs);
+            for w in ranked.windows(2) {
+                prop_assert!(w[0].1 >= w[1].1, "Not sorted: {} < {}", w[0].1, w[1].1);
+            }
+        }
+
+        /// Late interaction: `MaxSim` score is non-negative for non-negative inputs
+        #[test]
+        fn late_interaction_nonnegative(
+            q_tokens in 1usize..4,
+            d_tokens in 1usize..4,
+            dim in 2usize..8
+        ) {
+            // Generate non-negative vectors
+            let query: Vec<Vec<f32>> = (0..q_tokens)
+                .map(|i| (0..dim).map(|j| ((i * dim + j) % 5) as f32 * 0.1 + 0.1).collect())
+                .collect();
+            let doc: Vec<Vec<f32>> = (0..d_tokens)
+                .map(|i| (0..dim).map(|j| ((i * dim + j + 3) % 5) as f32 * 0.1 + 0.1).collect())
+                .collect();
+
+            let query_refs: Vec<&[f32]> = query.iter().map(Vec::as_slice).collect();
+            let doc_refs: Vec<&[f32]> = doc.iter().map(Vec::as_slice).collect();
+
+            let scorer = LateInteractionScorer::MaxSimDot;
+            let score = scorer.score(&query_refs, &doc_refs);
+            prop_assert!(score >= 0.0, "`MaxSim` score {} should be non-negative", score);
+        }
+
+        /// Late interaction: empty doc returns 0
+        #[test]
+        fn late_interaction_empty_doc(dim in 2usize..8) {
+            let query: Vec<Vec<f32>> = vec![vec![1.0; dim], vec![0.5; dim]];
+            let query_refs: Vec<&[f32]> = query.iter().map(Vec::as_slice).collect();
+            let doc_refs: Vec<&[f32]> = vec![];
+
+            let scorer = LateInteractionScorer::MaxSimDot;
+            let score = scorer.score(&query_refs, &doc_refs);
+            prop_assert!((score - 0.0).abs() < 1e-9, "Empty doc should return 0, got {}", score);
+        }
+
+        /// Cosine scorer bounded [-1, 1] for normalized vectors
+        #[test]
+        fn scorer_cosine_bounded_normalized(dim in 2usize..16) {
+            // Create unit vectors
+            let a: Vec<f32> = (0..dim).map(|i| if i == 0 { 1.0 } else { 0.0 }).collect();
+            let b: Vec<f32> = (0..dim).map(|i| if i == 1 { 1.0 } else { 0.0 }).collect();
+
+            let scorer = DenseScorer::Cosine;
+            let score = scorer.score(&a, &b);
+            prop_assert!(score >= -1.01 && score <= 1.01, "Cosine {} out of bounds", score);
         }
     }
 }

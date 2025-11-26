@@ -1,6 +1,6 @@
 # rank-refine
 
-Reranking for retrieval pipelines. Re-scores candidates with expensive methods.
+Reranking for retrieval pipelines.
 
 [![Crates.io](https://img.shields.io/crates/v/rank-refine.svg)](https://crates.io/crates/rank-refine)
 [![Docs](https://docs.rs/rank-refine/badge.svg)](https://docs.rs/rank-refine)
@@ -10,136 +10,64 @@ Reranking for retrieval pipelines. Re-scores candidates with expensive methods.
 ```toml
 [dependencies]
 rank-refine = "0.7"
+
+# Optional: hierarchical clustering for better token pooling
+rank-refine = { version = "0.7", features = ["hierarchical"] }
 ```
 
-## When to Use What
+## Example
 
-| Method | Best For | Latency | Storage |
-|--------|----------|---------|---------|
-| `crossencoder` | Highest accuracy | High (model inference) | Low (text only) |
-| `colbert` | Token-level precision | Medium (SIMD ops) | High (token vectors) |
-| `matryoshka` | Two-stage retrieval | Low (vector tail) | Medium (full embedding) |
+```rust
+use rank_refine::{colbert, matryoshka};
 
-**Cross-encoders** are most accurate but expensive. Use for top-K refinement (K ≤ 100).
+// Matryoshka refinement (MRL embeddings)
+let candidates = vec![("d1", 0.9), ("d2", 0.8)];
+let query = vec![0.1, 0.2, 0.3, 0.4];
+let docs = vec![
+    ("d1", vec![0.1, 0.2, 0.3, 0.4]),
+    ("d2", vec![0.1, 0.2, 0.3, 0.4]),
+];
+let refined = matryoshka::refine(&candidates, &query, &docs, 2);
 
-**ColBERT/MaxSim** provides token-level matching without encoding query-doc pairs together. Good for longer documents where specific passages matter.
+// ColBERT MaxSim ranking
+let query_tokens = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+let doc_tokens = vec![
+    ("d1", vec![vec![0.9, 0.1], vec![0.1, 0.9]]),
+    ("d2", vec![vec![0.5, 0.5], vec![0.5, 0.5]]),
+];
+let ranked = colbert::rank(&query_tokens, &doc_tokens);
 
-**Matryoshka** is ideal when you already have MRL embeddings. Coarse retrieval uses the prefix; refinement uses the tail. Zero model calls.
+// Token pooling (reduces storage 50-66%)
+let pooled = colbert::pool_tokens(&doc_tokens[0].1, 2);
+```
 
 ## Modules
 
 | Module | Method |
 |--------|--------|
-| `matryoshka` | Refine with MRL tail dimensions |
-| `colbert` | MaxSim late interaction |
+| `matryoshka` | MRL tail dimension refinement |
+| `colbert` | MaxSim late interaction + token pooling |
 | `crossencoder` | Cross-encoder trait (BYOM) |
 | `simd` | Vector ops (AVX2/NEON) |
+| `scoring` | Unified `Scorer` and `TokenScorer` traits |
 
-## Matryoshka Refinement
+## Features
 
-For [Matryoshka embeddings](https://arxiv.org/abs/2205.13147) where prefixes are valid lower-dim embeddings.
+- `hierarchical`: Use [kodama](https://docs.rs/kodama) for Ward's method clustering
+  in token pooling (better quality, O(n²) vs O(n³))
 
-```rust
-use rank_refine::matryoshka;
+## Development
 
-// Stage 1: coarse retrieval with truncated embeddings (e.g., first 64 dims)
-// Stage 2: refine with tail dimensions
-let refined = matryoshka::refine(&candidates, &query, &docs, 64);
+```bash
+# Run tests
+cargo test --all-features
 
-// With custom blending (0.0 = all tail, 1.0 = all original)
-let refined = matryoshka::refine_with_alpha(&candidates, &query, &docs, 64, 0.3);
+# Run benchmarks
+cargo bench
 
-// Fallible version for validated inputs
-let result = matryoshka::try_refine(&candidates, &query, &docs, 64, RefineConfig::default());
+# Fuzz testing (requires nightly)
+rustup run nightly cargo fuzz run fuzz_simd
 ```
-
-Supported models: `nomic-embed-text-v1.5`, `gte-large-en-v1.5`, `mxbai-embed-large-v1`, `jina-embeddings-v3`.
-
-## ColBERT / MaxSim
-
-For [ColBERT](https://arxiv.org/abs/2004.12832) token-level embeddings.
-
-```rust
-use rank_refine::colbert;
-
-// query_tokens: Vec<Vec<f32>> - one embedding per token
-// docs: Vec<(id, Vec<Vec<f32>>)> - token embeddings per doc
-let ranked = colbert::rank(&query_tokens, &docs);
-
-// With top_k limit
-let ranked = colbert::rank_with_top_k(&query_tokens, &docs, Some(10));
-
-// Token pooling reduces storage 50-66% with minimal quality loss
-let pooled = colbert::pool_tokens(&doc_tokens, 2); // pool_factor=2
-
-// Protected tokens (e.g., [CLS]) preserved
-let pooled = colbert::pool_tokens_with_protected(&doc_tokens, 2, 1);
-```
-
-Supported models: `colbertv2.0`, `answerai-colbert-small-v1`, `jina-colbert-v2`.
-
-## Cross-Encoder
-
-Trait-based. Bring your own inference backend.
-
-```rust
-use rank_refine::crossencoder::{CrossEncoderModel, rerank};
-
-impl CrossEncoderModel for YourModel {
-    fn score_batch(&self, query: &str, documents: &[&str]) -> Vec<f32> {
-        // your inference code
-    }
-}
-
-let ranked = rerank(&model, "query", &[("id1", "text1"), ("id2", "text2")]);
-```
-
-Models: `ms-marco-MiniLM-L-6-v2`, `bge-reranker-base`, `bge-reranker-v2-m3`.
-
-## Configuration
-
-```rust
-use rank_refine::RefineConfig;
-
-// Builder pattern
-let config = RefineConfig::default()
-    .with_alpha(0.7)   // 70% original, 30% refined
-    .with_top_k(10);   // return top 10
-
-// Presets
-let config = RefineConfig::refinement_only();  // alpha = 0.0
-let config = RefineConfig::original_only();    // alpha = 1.0
-```
-
-## Error Handling
-
-Functions have `try_*` variants that return `Result<T, RefineError>`:
-
-```rust
-use rank_refine::{matryoshka, RefineConfig, RefineError};
-
-match matryoshka::try_refine(&candidates, &query, &docs, 64, RefineConfig::default()) {
-    Ok(refined) => { /* use refined */ }
-    Err(RefineError::InvalidHeadDims { head_dims, query_len }) => {
-        eprintln!("head_dims ({head_dims}) must be < query.len() ({query_len})");
-    }
-    Err(e) => eprintln!("Error: {e}"),
-}
-```
-
-## SIMD
-
-Vector ops use AVX2+FMA (x86_64) or NEON (aarch64) when available. No configuration needed.
-
-## Caveats
-
-- Candidates not in `docs` are dropped silently
-- Empty query in MaxSim returns 0
-- Short doc embeddings (< head_dims) are skipped in matryoshka
-
-## Related
-
-- [rank-fusion](https://crates.io/crates/rank-fusion) — Combine results from multiple retrievers (RRF, CombMNZ, Borda)
 
 ## License
 

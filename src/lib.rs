@@ -1,10 +1,10 @@
 //! Reranking for retrieval pipelines.
 //!
-//! - [`scoring`] — Unified scoring traits (`Scorer`, `TokenScorer`)
 //! - [`matryoshka`] — Refine using MRL tail dimensions
-//! - [`colbert`] — `MaxSim` late interaction + token pooling
+//! - [`colbert`] — `MaxSim` late interaction
 //! - [`crossencoder`] — Cross-encoder trait (BYOM)
 //! - [`simd`] — Vector ops (AVX2/NEON)
+//! - [`scoring`] — Unified traits for dense and late interaction scoring
 //!
 //! ## Error Handling
 //!
@@ -98,7 +98,7 @@ impl RefineConfig {
         self
     }
 
-    /// Limit output to top_k results.
+    /// Limit output to `top_k` results.
     #[must_use]
     pub const fn with_top_k(mut self, top_k: usize) -> Self {
         self.top_k = Some(top_k);

@@ -9,8 +9,17 @@
 - `Embedding` and `TokenEmbeddings` newtypes for type safety
 - `rank_with_top_k()` in colbert module
 - `refine_with_config()` for full configuration control
-- Cross-links between rank-fusion and rank-refine in READMEs
-- Algorithm selection guidance tables in READMEs
+- **`scoring` module**: Unified `Scorer` and `TokenScorer` traits for interoperability
+  - `DenseScorer` (Dot, Cosine) for single-vector embeddings
+  - `LateInteractionScorer` (MaxSimDot, MaxSimCosine) for multi-vector
+  - `blend()` and `normalize_scores()` utilities
+- Fuzz testing infrastructure (`fuzz/`) for SIMD operations
+- Comprehensive property tests (20+ new tests) covering:
+  - Token pooling quality (dimension preservation, score maintenance)
+  - Score blending linearity
+  - Normalization order preservation
+  - Late interaction bounds
+- Updated DESIGN.md with late interaction rationale and architecture diagram
 
 ### Changed
 - Improved doc comments with usage examples and error conditions

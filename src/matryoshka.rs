@@ -81,6 +81,10 @@ pub fn refine_with_alpha<I: Clone + Eq + Hash>(
 }
 
 /// Refine using only tail dimensions (ignore original scores).
+///
+/// # Panics
+///
+/// Panics if `head_dims >= query.len()`.
 #[must_use]
 pub fn refine_tail_only<I: Clone + Eq + Hash>(
     candidates: &[(I, f32)],
