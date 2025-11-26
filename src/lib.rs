@@ -1,112 +1,60 @@
-//! Reranking for retrieval pipelines.
+//! Reranking algorithms for retrieval pipelines.
 //!
-//! This crate provides **scoring algorithms only** — no model weights, no inference.
-//! You bring your own embeddings (from any source: sentence-transformers, fastembed,
-//! candle, ONNX, etc.) and this crate handles the reranking math.
+//! You bring embeddings, this crate does the math. No model weights, no inference,
+//! no downloads. Get embeddings from fastembed, candle, ort, or serialize from Python.
 //!
-//! ## Modules
-//!
-//! | Module | Purpose |
-//! |--------|---------|
-//! | [`matryoshka`] | Refine using MRL tail dimensions |
-//! | [`colbert`] | `MaxSim` late interaction + token pooling |
-//! | [`crossencoder`] | Cross-encoder trait (implement for your model) |
-//! | [`simd`] | Vector ops (AVX2/NEON accelerated) |
-//! | [`scoring`] | Unified [`Scorer`](scoring::Scorer), [`TokenScorer`](scoring::TokenScorer), [`Pooler`](scoring::Pooler) traits |
-//!
-//! ## Quick Start
+//! # Quick Start
 //!
 //! ```rust
-//! use rank_refine::{simd, colbert, as_slices};
+//! use rank_refine::simd;
 //!
-//! // Dense scoring (your embeddings, our math)
+//! // Dense scoring
 //! let score = simd::cosine(&[1.0, 0.0], &[0.707, 0.707]);
 //!
-//! // ColBERT MaxSim - two equivalent ways:
+//! // Late interaction (ColBERT MaxSim)
 //! let query = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
 //! let doc = vec![vec![0.9, 0.1], vec![0.1, 0.9]];
-//!
-//! // Option 1: Convenience function (owned vectors)
-//! let score1 = simd::maxsim_vecs(&query, &doc);
-//!
-//! // Option 2: Low-level with as_slices helper
-//! let q_refs = as_slices(&query);
-//! let d_refs = as_slices(&doc);
-//! let score2 = simd::maxsim(&q_refs, &d_refs);
-//!
-//! // Token pooling (compress 32 tokens to 8)
-//! let tokens: Vec<Vec<f32>> = vec![vec![1.0; 128]; 32];
-//! let pooled = colbert::pool_tokens_adaptive(&tokens, 4); // factor 4 -> 8 tokens
+//! let score = simd::maxsim_vecs(&query, &doc);
 //! ```
 //!
-//! ## Design: Bring Your Own Model (BYOM)
+//! # Modules
 //!
-//! This crate is intentionally **model-agnostic**:
+//! - [`simd`] — SIMD-accelerated vector ops (dot, cosine, maxsim)
+//! - [`colbert`] — Late interaction ranking and token pooling
+//! - [`matryoshka`] — MRL tail dimension refinement
+//! - [`crossencoder`] — Cross-encoder trait for transformer models
+//! - [`scoring`] — Unified traits for dense/late-interaction scoring
 //!
-//! - **No downloads**: Tests use synthetic vectors, not real models
-//! - **No dependencies**: No ONNX, PyTorch, or ML frameworks
-//! - **Pure Rust**: SIMD-accelerated math you can audit
+//! # Cross-Encoder Integration
 //!
-//! For cross-encoders, implement the [`crossencoder::CrossEncoderModel`] trait:
+//! Implement [`crossencoder::CrossEncoderModel`] to use your inference backend:
 //!
 //! ```rust
 //! use rank_refine::crossencoder::CrossEncoderModel;
 //!
-//! struct MyModel; // Your inference implementation
+//! struct MyModel;
 //!
 //! impl CrossEncoderModel for MyModel {
 //!     fn score_batch(&self, query: &str, documents: &[&str]) -> Vec<f32> {
-//!         // Call your ONNX/candle/tch model here
-//!         documents.iter().map(|_| 0.5).collect() // placeholder
+//!         // Your ONNX/candle/tch inference here
+//!         vec![0.5; documents.len()]
 //!     }
 //! }
 //! ```
 //!
-//! ## Complete Pipeline Example
+//! # Token Pooling
 //!
-//! Here's a realistic two-stage retrieval pipeline:
+//! Reduce ColBERT storage by clustering similar tokens:
 //!
 //! ```rust
-//! use rank_refine::{simd, colbert, scoring::{Scorer, DenseScorer, AdaptivePooler, Pooler}};
+//! use rank_refine::colbert;
 //!
-//! // Stage 1: Fast dense retrieval (your embeddings, our math)
-//! let query_dense: Vec<f32> = vec![0.1, 0.2, 0.3, 0.4]; // from your embedding model
-//! let docs_dense = vec![
-//!     ("doc1", vec![0.15, 0.25, 0.35, 0.45]),
-//!     ("doc2", vec![0.9, 0.1, 0.0, 0.0]),
-//! ];
-//!
-//! let scorer = DenseScorer::Cosine;
-//! let doc_refs: Vec<(&str, &[f32])> = docs_dense.iter()
-//!     .map(|(id, emb)| (*id, emb.as_slice()))
-//!     .collect();
-//! let first_stage: Vec<(&str, f32)> = scorer.rank(&query_dense, &doc_refs);
-//!
-//! // Stage 2: Refine top-k with ColBERT (late interaction)
-//! let query_tokens: Vec<Vec<f32>> = vec![
-//!     vec![0.1, 0.9, 0.0, 0.0], // token 1
-//!     vec![0.0, 0.1, 0.8, 0.1], // token 2
-//! ];
-//! let doc_tokens = vec![
-//!     ("doc1", vec![vec![0.2, 0.8, 0.1, 0.0], vec![0.0, 0.2, 0.7, 0.1]]),
-//!     ("doc2", vec![vec![0.9, 0.1, 0.0, 0.0]]),
-//! ];
-//!
-//! // Optional: compress token embeddings for storage efficiency
-//! let pooler = AdaptivePooler;
-//! let doc1_pooled = pooler.pool_by_factor(&doc_tokens[0].1, 2);
-//!
-//! // Compute MaxSim score
-//! let q_refs: Vec<&[f32]> = query_tokens.iter().map(Vec::as_slice).collect();
-//! let d_refs: Vec<&[f32]> = doc_tokens[0].1.iter().map(Vec::as_slice).collect();
-//! let maxsim = simd::maxsim(&q_refs, &d_refs);
-//! assert!(maxsim > 0.0);
+//! let tokens: Vec<Vec<f32>> = vec![vec![1.0; 128]; 32];
+//! let pooled = colbert::pool_tokens(&tokens, 2); // 50% reduction
+//! assert!(pooled.len() <= 16);
 //! ```
 //!
-//! ## Error Handling
-//!
-//! Functions return [`Result<T, RefineError>`] for invalid inputs.
-//! Use the `try_*` variants for fallible operations.
+//! For aggressive pooling (4x+), enable the `hierarchical` feature for Ward's method.
 
 pub mod colbert;
 pub mod crossencoder;
@@ -114,21 +62,11 @@ pub mod matryoshka;
 pub mod scoring;
 pub mod simd;
 
-/// Convenient re-exports for common usage patterns.
-///
-/// ```rust
-/// use rank_refine::prelude::*;
-///
-/// let scorer = DenseScorer::Cosine;
-/// let score = scorer.score(&[1.0, 0.0], &[0.707, 0.707]);
-/// ```
+/// Common imports.
 pub mod prelude {
     pub use crate::as_slices;
-    pub use crate::scoring::{
-        blend, normalize_scores, AdaptivePooler, ClusteringPooler, DenseScorer,
-        LateInteractionScorer, Pooler, Scorer, SequentialPooler, TokenScorer,
-    };
-    pub use crate::simd::{cosine, dot, maxsim, maxsim_cosine, maxsim_cosine_vecs, maxsim_vecs};
+    pub use crate::scoring::{DenseScorer, LateInteractionScorer, Pooler, Scorer, TokenScorer};
+    pub use crate::simd::{cosine, dot, maxsim, maxsim_vecs};
     pub use crate::RefineConfig;
 }
 
@@ -136,32 +74,27 @@ pub mod prelude {
 // Error Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Errors that can occur during refinement.
+/// Errors from refinement operations.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RefineError {
-    /// Head dimensions >= query length (no tail to refine with).
+    /// `head_dims` must be less than `query.len()` for tail refinement.
     InvalidHeadDims { head_dims: usize, query_len: usize },
-    /// Empty query (cannot compute similarity).
+    /// Cannot score an empty query.
     EmptyQuery,
-    /// Dimension mismatch between query and document.
+    /// Vector dimensions must match.
     DimensionMismatch { expected: usize, got: usize },
 }
 
 impl std::fmt::Display for RefineError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::InvalidHeadDims {
-                head_dims,
-                query_len,
-            } => {
-                write!(
-                    f,
-                    "head_dims ({head_dims}) must be < query.len() ({query_len})"
-                )
-            }
-            Self::EmptyQuery => write!(f, "query is empty"),
+            Self::InvalidHeadDims { head_dims, query_len } => write!(
+                f,
+                "invalid head_dims: {head_dims} >= query length {query_len}"
+            ),
+            Self::EmptyQuery => write!(f, "empty query"),
             Self::DimensionMismatch { expected, got } => {
-                write!(f, "dimension mismatch: expected {expected}, got {got}")
+                write!(f, "expected {expected} dimensions, got {got}")
             }
         }
     }
@@ -172,20 +105,16 @@ impl std::error::Error for RefineError {}
 /// Result type for refinement operations.
 pub type Result<T> = std::result::Result<T, RefineError>;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Conversion Utilities
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Convert owned token embeddings to borrowed slices.
+/// Convert `&[Vec<f32>]` to `Vec<&[f32]>`.
 ///
-/// This is the idiomatic pattern for working with the SIMD functions:
+/// Convenience for passing owned token vectors to slice-based APIs:
 ///
 /// ```rust
 /// use rank_refine::{simd, as_slices};
 ///
-/// let tokens: Vec<Vec<f32>> = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+/// let tokens = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
 /// let refs = as_slices(&tokens);
-/// // Now you can pass `&refs` to simd::maxsim, scoring traits, etc.
+/// let score = simd::maxsim(&refs, &refs);
 /// ```
 #[inline]
 #[must_use]
@@ -205,68 +134,53 @@ pub(crate) fn sort_scored_desc<T>(results: &mut [(T, f32)]) {
     results.sort_by(|a, b| b.1.total_cmp(&a.1));
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Configuration
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Configuration for refinement operations.
-///
-/// # Example
+/// Configuration for score blending and truncation.
 ///
 /// ```rust
 /// use rank_refine::RefineConfig;
 ///
 /// let config = RefineConfig::default()
-///     .with_alpha(0.7)
+///     .with_alpha(0.7)  // 70% original, 30% refinement
 ///     .with_top_k(10);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RefineConfig {
-    /// Weight for original score (0.0 = all new, 1.0 = all original).
+    /// Blending weight: 0.0 = all refinement, 1.0 = all original. Default: 0.5.
     pub alpha: f32,
-    /// Maximum results to return (None = all).
+    /// Truncate to top k results. Default: None (return all).
     pub top_k: Option<usize>,
 }
 
 impl Default for RefineConfig {
     fn default() -> Self {
-        Self {
-            alpha: 0.5,
-            top_k: None,
-        }
+        Self { alpha: 0.5, top_k: None }
     }
 }
 
 impl RefineConfig {
-    /// Set the blending weight (0.0 = all refinement, 1.0 = all original).
+    /// Set blending weight.
     #[must_use]
     pub const fn with_alpha(mut self, alpha: f32) -> Self {
         self.alpha = alpha;
         self
     }
 
-    /// Limit output to `top_k` results.
+    /// Limit output to top k.
     #[must_use]
     pub const fn with_top_k(mut self, top_k: usize) -> Self {
         self.top_k = Some(top_k);
         self
     }
 
-    /// Use only refinement scores (ignore original).
+    /// Only use refinement scores (alpha = 0).
     #[must_use]
     pub const fn refinement_only() -> Self {
-        Self {
-            alpha: 0.0,
-            top_k: None,
-        }
+        Self { alpha: 0.0, top_k: None }
     }
 
-    /// Use only original scores (no refinement).
+    /// Only use original scores (alpha = 1).
     #[must_use]
     pub const fn original_only() -> Self {
-        Self {
-            alpha: 1.0,
-            top_k: None,
-        }
+        Self { alpha: 1.0, top_k: None }
     }
 }

@@ -1,36 +1,14 @@
-//! Unified scoring traits for retrieval pipelines.
+//! Scoring traits for dense and late-interaction retrieval.
 //!
-//! This module provides a common abstraction over different scoring strategies:
-//!
-//! - **Dense scoring**: Single-vector embeddings (cosine, dot product)
-//! - **Late interaction**: Multi-vector embeddings (`MaxSim`, `ColBERT`)
-//! - **Cross-encoder**: Transformer-based scoring (external models)
-//!
-//! # Why Late Interaction?
-//!
-//! Dense retrieval (single-vector) is fast but loses fine-grained information.
-//! Late interaction (multi-vector) preserves token-level semantics:
-//!
-//! | Approach | Representation | Query Time | Quality |
-//! |----------|----------------|------------|---------|
-//! | Dense | `Vec<f32>` | O(1) dot | Good |
-//! | Late Interaction | `Vec<Vec<f32>>` | O(m*n) `MaxSim` | Better |
-//! | Cross-encoder | Query + Doc text | O(n) inference | Best |
-//!
-//! Use dense for fast first-stage retrieval, then refine with late interaction
-//! or cross-encoder for the top candidates.
-//!
-//! # Example
+//! - [`Scorer`] — Single-vector (dense) scoring
+//! - [`TokenScorer`] — Multi-vector (late interaction) scoring
+//! - [`Pooler`] — Token embedding compression
 //!
 //! ```rust
 //! use rank_refine::scoring::{DenseScorer, Scorer};
 //!
 //! let scorer = DenseScorer::Cosine;
-//! let query = &[1.0, 0.0, 0.0];
-//! let doc = &[0.9, 0.1, 0.0];
-//!
-//! let score = scorer.score(query, doc);
-//! assert!(score > 0.9);
+//! let score = scorer.score(&[1.0, 0.0], &[0.9, 0.1]);
 //! ```
 
 use crate::simd;
@@ -109,26 +87,9 @@ impl LateInteractionScorer {
     }
 }
 
-/// Trait for late interaction (multi-vector) scoring.
+/// Multi-vector scoring (late interaction).
 ///
-/// Multi-vector representations preserve token-level semantics, enabling
-/// fine-grained matching that outperforms dense scoring on complex queries.
-///
-/// # Convenience Methods
-///
-/// The trait provides both borrowed (`&[&[f32]]`) and owned (`&[Vec<f32>]`)
-/// variants. Use whichever matches your data:
-///
-/// ```rust
-/// use rank_refine::scoring::{TokenScorer, LateInteractionScorer};
-///
-/// let scorer = LateInteractionScorer::MaxSimDot;
-///
-/// // With owned vectors (common when loading from storage)
-/// let q_owned = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
-/// let d_owned = vec![vec![0.9, 0.1]];
-/// let score = scorer.score_vecs(&q_owned, &d_owned);
-/// ```
+/// Provides both slice-based (`&[&[f32]]`) and owned (`&[Vec<f32>]`) methods.
 pub trait TokenScorer {
     /// Score similarity between query tokens and document tokens.
     fn score_tokens(&self, query: &[&[f32]], doc: &[&[f32]]) -> f32;
@@ -218,27 +179,19 @@ pub fn normalize_scores(scores: &[f32]) -> Vec<f32> {
 // Pooler Trait
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Trait for token pooling strategies.
+/// Token embedding compression.
 ///
-/// Pooling reduces the number of token embeddings while preserving semantic
-/// information. Different strategies trade off quality vs speed.
+/// Invariants: output.len() <= input.len(), dimension preserved, empty in → empty out.
 pub trait Pooler {
-    /// Pool tokens to approximately `target_count` vectors.
-    ///
-    /// # Invariants
-    ///
-    /// - `pool(tokens).len() <= tokens.len()`
-    /// - `pool(tokens).iter().all(|t| t.len() == dim)` (dimension preserved)
-    /// - `pool(&[]).is_empty()`
+    /// Pool to approximately `target_count` vectors.
     fn pool(&self, tokens: &[Vec<f32>], target_count: usize) -> Vec<Vec<f32>>;
 
-    /// Pool with a compression factor (e.g., 2 = 50% reduction).
+    /// Pool with compression factor (2 = 50% reduction, 3 = 66%, etc).
     fn pool_by_factor(&self, tokens: &[Vec<f32>], factor: usize) -> Vec<Vec<f32>> {
         if tokens.is_empty() || factor <= 1 {
             return tokens.to_vec();
         }
-        let target = (tokens.len() / factor).max(1);
-        self.pool(tokens, target)
+        self.pool(tokens, (tokens.len() / factor).max(1))
     }
 }
 

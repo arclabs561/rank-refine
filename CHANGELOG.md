@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.7] - 2025-11-26
+
+### Changed
+- Simplified module documentation (less verbose, more direct)
+- Cleaner error messages in `RefineError`
+- Streamlined `RefineConfig` docs
+- Reduced prelude exports to essentials
+- Shorter trait documentation in `scoring` module
+
 ## [0.7.6] - 2025-11-26
 
 ### Added
