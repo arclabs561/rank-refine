@@ -1,16 +1,64 @@
 //! Reranking for retrieval pipelines.
 //!
-//! - [`matryoshka`] — Refine using MRL tail dimensions
-//! - [`colbert`] — `MaxSim` late interaction
-//! - [`crossencoder`] — Cross-encoder trait (BYOM)
-//! - [`simd`] — Vector ops (AVX2/NEON)
-//! - [`scoring`] — Unified traits for dense and late interaction scoring
+//! This crate provides **scoring algorithms only** — no model weights, no inference.
+//! You bring your own embeddings (from any source: sentence-transformers, fastembed,
+//! candle, ONNX, etc.) and this crate handles the reranking math.
+//!
+//! ## Modules
+//!
+//! | Module | Purpose |
+//! |--------|---------|
+//! | [`matryoshka`] | Refine using MRL tail dimensions |
+//! | [`colbert`] | `MaxSim` late interaction + token pooling |
+//! | [`crossencoder`] | Cross-encoder trait (implement for your model) |
+//! | [`simd`] | Vector ops (AVX2/NEON accelerated) |
+//! | [`scoring`] | Unified [`Scorer`](scoring::Scorer), [`TokenScorer`](scoring::TokenScorer), [`Pooler`](scoring::Pooler) traits |
+//!
+//! ## Quick Start
+//!
+//! ```rust
+//! use rank_refine::{simd, colbert, matryoshka};
+//!
+//! // Dense scoring (your embeddings, our math)
+//! let score = simd::cosine(&[1.0, 0.0], &[0.707, 0.707]);
+//!
+//! // ColBERT MaxSim (token-level embeddings)
+//! let query_tokens: Vec<&[f32]> = vec![&[1.0, 0.0], &[0.0, 1.0]];
+//! let doc_tokens: Vec<&[f32]> = vec![&[0.9, 0.1], &[0.1, 0.9]];
+//! let maxsim_score = simd::maxsim(&query_tokens, &doc_tokens);
+//!
+//! // Token pooling (compress 32 tokens to 8)
+//! let tokens: Vec<Vec<f32>> = vec![vec![1.0; 128]; 32];
+//! let pooled = colbert::pool_tokens_adaptive(&tokens, 4); // factor 4 -> 8 tokens
+//! ```
+//!
+//! ## Design: Bring Your Own Model (BYOM)
+//!
+//! This crate is intentionally **model-agnostic**:
+//!
+//! - **No downloads**: Tests use synthetic vectors, not real models
+//! - **No dependencies**: No ONNX, PyTorch, or ML frameworks
+//! - **Pure Rust**: SIMD-accelerated math you can audit
+//!
+//! For cross-encoders, implement the [`crossencoder::CrossEncoderModel`] trait:
+//!
+//! ```rust
+//! use rank_refine::crossencoder::CrossEncoderModel;
+//!
+//! struct MyModel; // Your inference implementation
+//!
+//! impl CrossEncoderModel for MyModel {
+//!     fn score_batch(&self, query: &str, documents: &[&str]) -> Vec<f32> {
+//!         // Call your ONNX/candle/tch model here
+//!         documents.iter().map(|_| 0.5).collect() // placeholder
+//!     }
+//! }
+//! ```
 //!
 //! ## Error Handling
 //!
 //! Functions return [`Result<T, RefineError>`] for invalid inputs.
-//! Use the `try_*` variants for fallible operations, or the panicking
-//! versions if you've validated inputs.
+//! Use the `try_*` variants for fallible operations.
 
 pub mod colbert;
 pub mod crossencoder;
