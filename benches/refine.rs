@@ -110,24 +110,91 @@ fn bench_pool_tokens(c: &mut Criterion) {
     for &n_tokens in &[32, 64, 128] {
         let tokens: Vec<Vec<f32>> = (0..n_tokens).map(|i| random_vec(dim, i as u64)).collect();
 
-        // Pool factor 2 (50% reduction)
+        // Clustering-based pooling (factor 2)
         g.bench_with_input(
-            BenchmarkId::new("greedy_factor2", n_tokens),
+            BenchmarkId::new("clustering_f2", n_tokens),
             &tokens,
             |bench, toks| {
                 bench.iter(|| black_box(colbert::pool_tokens(toks, 2)));
             },
         );
 
-        // Sequential pooling (faster alternative)
+        // Clustering-based pooling (factor 3)
         g.bench_with_input(
-            BenchmarkId::new("sequential_window2", n_tokens),
+            BenchmarkId::new("clustering_f3", n_tokens),
+            &tokens,
+            |bench, toks| {
+                bench.iter(|| black_box(colbert::pool_tokens(toks, 3)));
+            },
+        );
+
+        // Sequential pooling (factor 2)
+        g.bench_with_input(
+            BenchmarkId::new("sequential_f2", n_tokens),
             &tokens,
             |bench, toks| {
                 bench.iter(|| black_box(colbert::pool_tokens_sequential(toks, 2)));
             },
         );
+
+        // Sequential pooling (factor 4)
+        g.bench_with_input(
+            BenchmarkId::new("sequential_f4", n_tokens),
+            &tokens,
+            |bench, toks| {
+                bench.iter(|| black_box(colbert::pool_tokens_sequential(toks, 4)));
+            },
+        );
+
+        // Adaptive pooling (auto-selects method)
+        g.bench_with_input(
+            BenchmarkId::new("adaptive_f2", n_tokens),
+            &tokens,
+            |bench, toks| {
+                bench.iter(|| black_box(colbert::pool_tokens_adaptive(toks, 2)));
+            },
+        );
+
+        g.bench_with_input(
+            BenchmarkId::new("adaptive_f4", n_tokens),
+            &tokens,
+            |bench, toks| {
+                bench.iter(|| black_box(colbert::pool_tokens_adaptive(toks, 4)));
+            },
+        );
     }
+
+    g.finish();
+}
+
+fn bench_maxsim_pooled(c: &mut Criterion) {
+    let mut g = c.benchmark_group("maxsim_pooled");
+
+    let dim = 128;
+    let query: Vec<Vec<f32>> = (0..32).map(|i| random_vec(dim, i)).collect();
+    let doc: Vec<Vec<f32>> = (0..128).map(|i| random_vec(dim, i + 1000)).collect();
+
+    let query_refs: Vec<&[f32]> = query.iter().map(Vec::as_slice).collect();
+
+    // Baseline: no pooling
+    let doc_refs: Vec<&[f32]> = doc.iter().map(Vec::as_slice).collect();
+    g.bench_function("no_pool_128tok", |bench| {
+        bench.iter(|| black_box(simd::maxsim(&query_refs, &doc_refs)));
+    });
+
+    // Pooled: factor 2 (64 tokens)
+    let pooled_2 = colbert::pool_tokens(&doc, 2);
+    let p2_refs: Vec<&[f32]> = pooled_2.iter().map(Vec::as_slice).collect();
+    g.bench_function("pool_f2_64tok", |bench| {
+        bench.iter(|| black_box(simd::maxsim(&query_refs, &p2_refs)));
+    });
+
+    // Pooled: factor 4 (32 tokens)
+    let pooled_4 = colbert::pool_tokens_sequential(&doc, 4);
+    let p4_refs: Vec<&[f32]> = pooled_4.iter().map(Vec::as_slice).collect();
+    g.bench_function("pool_f4_32tok", |bench| {
+        bench.iter(|| black_box(simd::maxsim(&query_refs, &p4_refs)));
+    });
 
     g.finish();
 }
@@ -138,6 +205,7 @@ criterion_group!(
     bench_maxsim,
     bench_matryoshka,
     bench_colbert,
-    bench_pool_tokens
+    bench_pool_tokens,
+    bench_maxsim_pooled
 );
 criterion_main!(benches);

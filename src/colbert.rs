@@ -414,12 +414,7 @@ pub fn refine<I: Clone + Eq + std::hash::Hash>(
     docs: &[(I, Vec<Vec<f32>>)],
     alpha: f32,
 ) -> Vec<(I, f32)> {
-    refine_with_config(
-        candidates,
-        query,
-        docs,
-        RefineConfig::default().with_alpha(alpha),
-    )
+    refine_with_config(candidates, query, docs, RefineConfig::default().with_alpha(alpha))
 }
 
 /// Refine with full configuration.
@@ -513,7 +508,10 @@ mod tests {
     fn test_refine() {
         let candidates = vec![("d1", 0.5), ("d2", 0.9)];
         let query = vec![vec![1.0, 0.0]];
-        let docs = vec![("d1", vec![vec![1.0, 0.0]]), ("d2", vec![vec![0.0, 1.0]])];
+        let docs = vec![
+            ("d1", vec![vec![1.0, 0.0]]),
+            ("d2", vec![vec![0.0, 1.0]]),
+        ];
 
         let refined = refine(&candidates, &query, &docs, 0.0);
         assert_eq!(refined[0].0, "d1");
@@ -556,7 +554,10 @@ mod tests {
     fn test_nan_score_handling() {
         let candidates = vec![("d1", f32::NAN), ("d2", 0.5)];
         let query = vec![vec![1.0, 0.0]];
-        let docs = vec![("d1", vec![vec![1.0, 0.0]]), ("d2", vec![vec![1.0, 0.0]])];
+        let docs = vec![
+            ("d1", vec![vec![1.0, 0.0]]),
+            ("d2", vec![vec![1.0, 0.0]]),
+        ];
 
         let refined = refine(&candidates, &query, &docs, 0.5);
         assert_eq!(refined.len(), 2);
@@ -656,11 +657,7 @@ mod tests {
     #[test]
     fn test_pooling_methods_produce_same_dimensions() {
         let tokens: Vec<Vec<f32>> = (0..8)
-            .map(|i| {
-                (0..16)
-                    .map(|j| ((i * 16 + j) as f32 * 0.01).sin())
-                    .collect()
-            })
+            .map(|i| (0..16).map(|j| ((i * 16 + j) as f32 * 0.01).sin()).collect())
             .collect();
 
         let greedy = pool_tokens(&tokens, 2);

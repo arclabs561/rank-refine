@@ -27,3 +27,10 @@ path = "fuzz_targets/fuzz_maxsim.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "fuzz_pool"
+path = "fuzz_targets/fuzz_pool.rs"
+test = false
+doc = false
+bench = false
