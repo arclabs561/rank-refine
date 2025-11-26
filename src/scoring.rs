@@ -151,7 +151,11 @@ pub trait TokenScorer {
     }
 
     /// Rank with owned document vectors (convenience wrapper).
-    fn rank_vecs<I: Clone>(&self, query: &[Vec<f32>], docs: &[(I, Vec<Vec<f32>>)]) -> Vec<(I, f32)> {
+    fn rank_vecs<I: Clone>(
+        &self,
+        query: &[Vec<f32>],
+        docs: &[(I, Vec<Vec<f32>>)],
+    ) -> Vec<(I, f32)> {
         let q = crate::as_slices(query);
         let mut results: Vec<(I, f32)> = docs
             .iter()
@@ -371,8 +375,8 @@ mod tests {
         let scorer = LateInteractionScorer::MaxSimDot;
         let query = vec![vec![1.0, 0.0]];
         let docs = vec![
-            ("d1", vec![vec![0.0, 1.0]]),  // orthogonal
-            ("d2", vec![vec![1.0, 0.0]]),  // aligned
+            ("d1", vec![vec![0.0, 1.0]]), // orthogonal
+            ("d2", vec![vec![1.0, 0.0]]), // aligned
         ];
 
         let ranked = scorer.rank_vecs(&query, &docs);

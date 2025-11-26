@@ -332,6 +332,22 @@ mod tests {
     }
 
     #[test]
+    fn test_maxsim_vecs() {
+        let query = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+        let doc = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+        // Both query tokens find perfect matches
+        assert!((maxsim_vecs(&query, &doc) - 2.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_maxsim_cosine_vecs() {
+        let query = vec![vec![2.0, 0.0]]; // unnormalized
+        let doc = vec![vec![1.0, 0.0]];
+        // Cosine should normalize, so result is 1.0
+        assert!((maxsim_cosine_vecs(&query, &doc) - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
     fn test_maxsim_cosine_basic() {
         let q1 = [1.0, 0.0];
         let d1 = [1.0, 0.0];

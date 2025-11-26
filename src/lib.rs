@@ -17,15 +17,22 @@
 //! ## Quick Start
 //!
 //! ```rust
-//! use rank_refine::{simd, colbert, matryoshka};
+//! use rank_refine::{simd, colbert, as_slices};
 //!
 //! // Dense scoring (your embeddings, our math)
 //! let score = simd::cosine(&[1.0, 0.0], &[0.707, 0.707]);
 //!
-//! // ColBERT MaxSim (token-level embeddings)
-//! let query_tokens: Vec<&[f32]> = vec![&[1.0, 0.0], &[0.0, 1.0]];
-//! let doc_tokens: Vec<&[f32]> = vec![&[0.9, 0.1], &[0.1, 0.9]];
-//! let maxsim_score = simd::maxsim(&query_tokens, &doc_tokens);
+//! // ColBERT MaxSim - two equivalent ways:
+//! let query = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+//! let doc = vec![vec![0.9, 0.1], vec![0.1, 0.9]];
+//!
+//! // Option 1: Convenience function (owned vectors)
+//! let score1 = simd::maxsim_vecs(&query, &doc);
+//!
+//! // Option 2: Low-level with as_slices helper
+//! let q_refs = as_slices(&query);
+//! let d_refs = as_slices(&doc);
+//! let score2 = simd::maxsim(&q_refs, &d_refs);
 //!
 //! // Token pooling (compress 32 tokens to 8)
 //! let tokens: Vec<Vec<f32>> = vec![vec![1.0; 128]; 32];
@@ -106,6 +113,24 @@ pub mod crossencoder;
 pub mod matryoshka;
 pub mod scoring;
 pub mod simd;
+
+/// Convenient re-exports for common usage patterns.
+///
+/// ```rust
+/// use rank_refine::prelude::*;
+///
+/// let scorer = DenseScorer::Cosine;
+/// let score = scorer.score(&[1.0, 0.0], &[0.707, 0.707]);
+/// ```
+pub mod prelude {
+    pub use crate::as_slices;
+    pub use crate::scoring::{
+        blend, normalize_scores, AdaptivePooler, ClusteringPooler, DenseScorer,
+        LateInteractionScorer, Pooler, Scorer, SequentialPooler, TokenScorer,
+    };
+    pub use crate::simd::{cosine, dot, maxsim, maxsim_cosine, maxsim_cosine_vecs, maxsim_vecs};
+    pub use crate::RefineConfig;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Error Types

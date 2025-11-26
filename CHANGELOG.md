@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.5] - 2025-11-26
+
+### Added
+- **`as_slices` helper**: Convert `&[Vec<f32>]` to `Vec<&[f32]>` ergonomically
+- **`simd::maxsim_vecs` / `maxsim_cosine_vecs`**: Score owned token vectors directly
+- **`TokenScorer::score_vecs` / `rank_vecs`**: Trait methods for owned vectors
+- **`prelude` module**: Convenient re-exports for common imports
+- 4 new tests for convenience functions
+
+### Changed
+- Updated quick start docs to showcase new convenience APIs
+- Internal code now uses `as_slices` consistently (no manual conversions)
+
 ## [0.7.4] - 2025-11-26
 
 ### Added
