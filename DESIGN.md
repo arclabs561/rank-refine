@@ -165,6 +165,57 @@ and is compatible with any MRL-trained model (e.g., Nomic, Cohere v3, OpenAI tex
                       └──────────────────┘
 ```
 
+## Embedding Training Paradigms
+
+Embeddings differ in how they're trained, affecting what scoring functions are appropriate:
+
+| Paradigm | Loss Function | Geometry | Correct Scoring |
+|----------|---------------|----------|-----------------|
+| **Contrastive** | InfoNCE, triplet | Unit hypersphere | `dot` = `cosine` (normalized) |
+| **Metric Learning** | Pull-push | Learned metric | Euclidean or learned |
+| **Instruction-tuned** | Task-conditioned contrastive | Asymmetric Q/D | `cosine` (role matters) |
+
+### Contrastive Learning (SimCLR, InfoNCE)
+
+```
+L = -log(exp(sim(q,d+)/τ) / Σexp(sim(q,d-)/τ))
+```
+
+- Embeddings are **unit normalized** (on hypersphere)
+- `cosine(a, b) = dot(a, b)` when both normalized
+- **Symmetric**: `score(q, d) = score(d, q)`
+
+### Instruction-Tuned (INSTRUCTOR, E5)
+
+```
+Query:    "Represent the question for retrieval: {text}"
+Document: "Represent the document for retrieval: {text}"
+```
+
+- Different prefixes for query vs document
+- **Asymmetric**: Query and document have distinct representations
+- Use `QueryEmbed` and `DocEmbed` types to enforce this at compile time
+
+### Type System Encoding
+
+The `embedding` module uses types to enforce these invariants:
+
+```rust
+// Normalized guarantees ||v|| = 1, so dot = cosine
+let q = normalize(&[3.0, 4.0]).unwrap();
+let d = normalize(&[1.0, 0.0]).unwrap();
+let sim = q.dot(&d); // Compile-time: this IS cosine
+
+// Query/Doc roles prevent mixing (instruction-tuned models)
+let query = QueryEmbed::new(query_vec);
+let doc = DocEmbed::new(doc_vec);
+let score = query.score(&doc); // Only valid direction
+
+// Masked tokens for batched processing with padding
+let masked = MaskedTokens::new(tokens, mask);
+let score = maxsim_masked(&query_tokens, &masked);
+```
+
 ## Trait Design
 
 The `scoring` module provides unified traits:
@@ -244,6 +295,12 @@ Based on review of production Rust implementations:
 - [2D Matryoshka](https://arxiv.org/abs/2411.17299) — Layer + dimension truncation (Wang et al., 2024)
 - [ColBERT](https://arxiv.org/abs/2004.12832) — Late interaction retrieval (Khattab & Zaharia, 2020)
 - [PLAID](https://arxiv.org/abs/2205.09707) — Efficient ColBERT serving
+
+### Embedding Training
+- [SimCLR](https://arxiv.org/abs/2002.05709) — Contrastive learning framework (Chen et al., 2020)
+- [InfoNCE](https://arxiv.org/abs/1807.03748) — Noise contrastive estimation loss (Oord et al., 2018)
+- [INSTRUCTOR](https://arxiv.org/abs/2212.09741) — Task-aware embeddings (Su et al., 2022)
+- [E5](https://arxiv.org/abs/2212.03533) — Text embeddings via contrastive learning (Wang et al., 2022)
 
 ### Token Pooling
 - [Token Pooling](https://arxiv.org/abs/2409.14683) — 50-75% storage reduction (Clavié et al., 2024)

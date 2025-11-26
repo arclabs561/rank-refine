@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.17] - 2025-11-26
+
+### Added
+- **`embedding` module**: Type-safe embedding wrappers that encode invariants at compile time:
+  - `Normalized`: Guarantees unit L2 norm (contrastive learning embeddings)
+  - `QueryEmbed`/`DocEmbed`: Role markers for instruction-tuned models
+  - `MaskedTokens`: Variable-length token batches with padding mask
+  - `maxsim_masked`: MaxSim with mask support for batched processing
+- `maxsim_batch` and `maxsim_cosine_batch`: Score one query against multiple documents
+- Embedding training paradigm taxonomy in DESIGN.md (contrastive, metric, instruction-tuned)
+- References for SimCLR, InfoNCE, INSTRUCTOR, E5 papers
+
+### Changed
+- Prelude now exports `Normalized`, `QueryEmbed`, `DocEmbed`, `MaskedTokens`, `maxsim_masked`, `normalize`
+
 ## [0.7.16] - 2025-11-26
 
 ### Changed

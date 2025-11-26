@@ -145,6 +145,47 @@ pub fn maxsim_cosine_vecs(query_tokens: &[Vec<f32>], doc_tokens: &[Vec<f32>]) ->
     maxsim_cosine(&q, &d)
 }
 
+/// Batch MaxSim: score a query against multiple documents.
+///
+/// Returns a vector of scores, one per document. This is more efficient
+/// than calling `maxsim` in a loop when you have many documents.
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::simd::maxsim_batch;
+///
+/// let query = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+/// let docs = vec![
+///     vec![vec![1.0, 0.0]],  // doc 0
+///     vec![vec![0.5, 0.5]],  // doc 1
+/// ];
+/// let scores = maxsim_batch(&query, &docs);
+/// assert_eq!(scores.len(), 2);
+/// ```
+#[must_use]
+pub fn maxsim_batch(query: &[Vec<f32>], docs: &[Vec<Vec<f32>>]) -> Vec<f32> {
+    let q = crate::as_slices(query);
+    docs.iter()
+        .map(|doc| {
+            let d = crate::as_slices(doc);
+            maxsim(&q, &d)
+        })
+        .collect()
+}
+
+/// Batch MaxSim with cosine similarity.
+#[must_use]
+pub fn maxsim_cosine_batch(query: &[Vec<f32>], docs: &[Vec<Vec<f32>>]) -> Vec<f32> {
+    let q = crate::as_slices(query);
+    docs.iter()
+        .map(|doc| {
+            let d = crate::as_slices(doc);
+            maxsim_cosine(&q, &d)
+        })
+        .collect()
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Portable fallback
 // ─────────────────────────────────────────────────────────────────────────────

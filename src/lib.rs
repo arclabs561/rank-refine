@@ -24,6 +24,7 @@
 //! - [`matryoshka`] — MRL tail dimension refinement
 //! - [`crossencoder`] — Cross-encoder trait for transformer models
 //! - [`scoring`] — Unified traits for dense/late-interaction scoring
+//! - [`embedding`] — Type-safe embedding wrappers (normalized, query/doc roles, masking)
 //!
 //! # Cross-Encoder Integration
 //!
@@ -58,6 +59,7 @@
 
 pub mod colbert;
 pub mod crossencoder;
+pub mod embedding;
 pub mod matryoshka;
 pub mod scoring;
 pub mod simd;
@@ -68,6 +70,11 @@ pub mod simd;
 /// use rank_refine::prelude::*;
 /// ```
 pub mod prelude {
+    // Type-safe embeddings
+    pub use crate::embedding::{
+        maxsim_masked, normalize, DocEmbed, MaskedTokens, Normalized, QueryEmbed,
+    };
+
     // Traits and types
     pub use crate::scoring::{
         DenseScorer, FnPooler, LateInteractionScorer, Pooler, Scorer, TokenScorer,
