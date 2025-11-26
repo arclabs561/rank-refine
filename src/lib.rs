@@ -224,4 +224,3 @@ impl RefineConfig {
         }
     }
 }
-
