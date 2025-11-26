@@ -134,6 +134,24 @@ Sorting uses `f32::total_cmp` for deterministic ordering:
 - This ensures consistent behavior regardless of input quality
 - Users should filter NaN scores if they appear (indicates bad embeddings)
 
+## Implementation Comparison
+
+Based on review of production Rust implementations (qdrant, fast-plaid, vecstore):
+
+| Feature | qdrant | fast-plaid | vecstore | rank-refine |
+|---------|--------|------------|----------|-------------|
+| SIMD dispatch | Runtime | GPU (tch) | None | Runtime |
+| Min dim threshold | 16/32 | N/A | None | 16 |
+| NaN handling | N/A | N/A | `partial_cmp` | `total_cmp` |
+| Token pooling | None | Quantization | None | Clustering |
+| Metric traits | `Metric<T>` | N/A | Config | `Scorer`/`TokenScorer` |
+
+Key differences:
+- **qdrant**: Full vector database; SIMD optimized with dimension thresholds
+- **fast-plaid**: GPU-based PLAID engine; uses PyTorch tensors
+- **vecstore**: Alpha-stage; simpler MaxSim but lacks NaN safety
+- **rank-refine**: CPU reranking library; unique hierarchical token pooling
+
 ## References
 
 ### Core Techniques

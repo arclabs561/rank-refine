@@ -10,6 +10,11 @@
 //! All SIMD implementations are tested against the portable fallback
 //! to ensure identical results (within floating-point tolerance).
 
+// Minimum vector dimension for SIMD to be worthwhile.
+// Below this, function call overhead outweighs SIMD benefits.
+// Matches qdrant's MIN_DIM_SIZE_SIMD threshold.
+const MIN_DIM_SIMD: usize = 16;
+
 /// Dot product of two vectors.
 ///
 /// If vectors have different lengths, uses the shorter length.
@@ -17,9 +22,14 @@
 #[inline]
 #[must_use]
 pub fn dot(a: &[f32], b: &[f32]) -> f32 {
+    let n = a.len().min(b.len());
+
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+        if n >= MIN_DIM_SIMD
+            && is_x86_feature_detected!("avx2")
+            && is_x86_feature_detected!("fma")
+        {
             // SAFETY: We've verified AVX2 and FMA are available via runtime detection.
             // The function handles mismatched lengths by using min(a.len(), b.len()).
             return unsafe { dot_avx2(a, b) };
@@ -27,9 +37,11 @@ pub fn dot(a: &[f32], b: &[f32]) -> f32 {
     }
     #[cfg(target_arch = "aarch64")]
     {
-        // SAFETY: NEON is always available on aarch64.
-        // The function handles mismatched lengths by using min(a.len(), b.len()).
-        return unsafe { dot_neon(a, b) };
+        if n >= MIN_DIM_SIMD {
+            // SAFETY: NEON is always available on aarch64.
+            // The function handles mismatched lengths by using min(a.len(), b.len()).
+            return unsafe { dot_neon(a, b) };
+        }
     }
     #[allow(unreachable_code)]
     dot_portable(a, b)

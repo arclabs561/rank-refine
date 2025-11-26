@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.13] - 2025-11-26
+
+### Changed
+- SIMD dispatch now skips vectors < 16 elements (matches qdrant threshold)
+- Small vectors use portable fallback to avoid SIMD call overhead
+
+### Added
+- Comprehensive GitHub code comparison in DESIGN.md
+
 ## [0.7.12] - 2025-11-26
 
 ### Changed
