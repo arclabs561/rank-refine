@@ -58,7 +58,12 @@ fn bench_matryoshka(c: &mut Criterion) {
 
     let query = random_vec(dim, 0);
     let candidates: Vec<(&str, f32)> = (0..n_candidates)
-        .map(|i| (Box::leak(format!("d{i}").into_boxed_str()) as &str, 0.9 - i as f32 * 0.01))
+        .map(|i| {
+            (
+                Box::leak(format!("d{i}").into_boxed_str()) as &str,
+                0.9 - i as f32 * 0.01,
+            )
+        })
         .collect();
     let docs: Vec<(&str, Vec<f32>)> = candidates
         .iter()
@@ -82,7 +87,9 @@ fn bench_colbert(c: &mut Criterion) {
     let docs: Vec<(&str, Vec<Vec<f32>>)> = (0..n_docs)
         .map(|i| {
             let id = Box::leak(format!("d{i}").into_boxed_str()) as &str;
-            let tokens: Vec<Vec<f32>> = (0..64).map(|j| random_vec(dim, (i * 100 + j) as u64)).collect();
+            let tokens: Vec<Vec<f32>> = (0..64)
+                .map(|j| random_vec(dim, (i * 100 + j) as u64))
+                .collect();
             (id, tokens)
         })
         .collect();
@@ -94,6 +101,11 @@ fn bench_colbert(c: &mut Criterion) {
     g.finish();
 }
 
-criterion_group!(benches, bench_simd, bench_maxsim, bench_matryoshka, bench_colbert);
+criterion_group!(
+    benches,
+    bench_simd,
+    bench_maxsim,
+    bench_matryoshka,
+    bench_colbert
+);
 criterion_main!(benches);
-

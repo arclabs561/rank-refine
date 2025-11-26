@@ -103,7 +103,7 @@ mod tests {
         let query = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
         let docs = vec![
             ("d1", vec![vec![1.0, 0.0], vec![0.0, 1.0]]), // perfect match
-            ("d2", vec![vec![0.5, 0.5]]),                  // mediocre
+            ("d2", vec![vec![0.5, 0.5]]),                 // mediocre
         ];
 
         let ranked = rank(&query, &docs);

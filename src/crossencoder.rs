@@ -87,15 +87,17 @@ pub fn refine<I: Clone, M: CrossEncoderModel>(
     model: &M,
     query: &str,
     candidates: &[(I, &str, f32)], // (id, text, original_score)
-    alpha: f32,                     // weight for original score
+    alpha: f32,                    // weight for original score
 ) -> Vec<(I, Score)> {
     let docs: Vec<&str> = candidates.iter().map(|(_, text, _)| *text).collect();
     let ce_scores = model.score_batch(query, &docs);
 
     // Normalize CE scores to [0, 1]
-    let (min_ce, max_ce) = ce_scores.iter().fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), &s| {
-        (lo.min(s), hi.max(s))
-    });
+    let (min_ce, max_ce) = ce_scores
+        .iter()
+        .fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), &s| {
+            (lo.min(s), hi.max(s))
+        });
     let range = (max_ce - min_ce).max(1e-9);
 
     let mut results: Vec<(I, Score)> = candidates
@@ -142,7 +144,7 @@ mod tests {
     fn test_refine() {
         let model = MockEncoder;
         let candidates = vec![
-            ("d1", "short", 0.9),          // high original, low CE
+            ("d1", "short", 0.9),           // high original, low CE
             ("d2", "longer doc here", 0.1), // low original, high CE
         ];
 
@@ -155,4 +157,3 @@ mod tests {
         assert_eq!(refined[0].0, "d1");
     }
 }
-
