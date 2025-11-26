@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.2] - 2025-11-26
+
+### Added
+- `pool_tokens_adaptive()`: Auto-selects pooling strategy based on factor
+  - Factor 2-3: clustering (quality-focused)
+  - Factor 4+: sequential (speed-focused)
+- Pool factor guide in docs with storage/quality tradeoffs
+- 26 new property tests (114 total)
+- Additional SIMD property tests (Cauchy-Schwarz, norm scaling, bilinearity)
+- Matryoshka property tests (alpha interpolation, config validation)
+
+### Fixed
+- Hierarchical pooling NaN handling (treats as max distance)
+- Clippy `items_after_statements` lint in `cut_dendrogram`
+
 ## [0.7.1] - 2025-11-26
 
 ### Added
