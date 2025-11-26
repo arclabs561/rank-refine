@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.7.16] - 2025-11-26
+
+### Changed
+- **Reference implementation**: Comprehensive mathematical documentation for all traits
+- `Scorer` trait: Documented symmetry, boundedness, scale invariants
+- `TokenScorer` trait: Documented MaxSim asymmetry, complexity, degenerate cases
+- `CrossEncoderModel` trait: Documented joint encoding semantics
+- `Pooler` trait: Documented dimensionality preservation, cardinality invariants
+- Module-level docs with taxonomy table and cascade diagram
+
 ## [0.7.15] - 2025-11-26
 
 ### Changed

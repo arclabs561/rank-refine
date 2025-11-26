@@ -1,6 +1,21 @@
-//! Cross-encoder reranking (O(n) inference).
+//! Cross-encoder reranking: `f(q, d) = NN([q; d])`.
 //!
-//! Implement [`CrossEncoderModel`] for your inference backend:
+//! Cross-encoders jointly encode query and document, enabling full
+//! token-level cross-attention. This is the most accurate but slowest
+//! scoring method.
+//!
+//! ## Mathematical Properties
+//!
+//! - **Input**: Raw text (query string, document string)
+//! - **Asymmetric**: Model sees `[CLS] query [SEP] doc [SEP]`
+//! - **Complexity**: O(n) model inferences where n = candidate count
+//!
+//! ## When to Use
+//!
+//! Cross-encoders excel at **precision on small candidate sets** (10-100 docs).
+//! Use after dense/MaxSim retrieval has narrowed the candidate pool.
+//!
+//! ## Example
 //!
 //! ```rust
 //! use rank_refine::crossencoder::{CrossEncoderModel, rerank};
@@ -21,13 +36,26 @@
 /// A query-document pair score.
 pub type Score = f32;
 
-/// Trait for cross-encoder implementations.
+/// Joint query-document scoring: `f(q, d) = NN([q; d])`.
 ///
-/// Implementors score query-document pairs using transformer models.
+/// Unlike `Scorer` (embedding-based) and `TokenScorer` (late interaction),
+/// cross-encoders process raw text and learn query-document interactions
+/// during encoding itself.
+///
+/// ## Mathematical Properties
+///
+/// - **Asymmetric**: The model sees `[CLS] query [SEP] document [SEP]`
+/// - **Unbounded output**: Scores are logits, not similarities
+/// - **Full attention**: Query and document tokens can attend to each other
+///
+/// ## Invariants
+///
+/// - `score_batch(q, [d1, d2]).len() == 2`
+/// - Batch scoring should be equivalent to individual scoring (no cross-doc effects)
 pub trait CrossEncoderModel {
     /// Score a batch of query-document pairs.
     ///
-    /// Returns relevance scores (higher = more relevant).
+    /// Returns relevance scores (higher = more relevant, typically logits).
     fn score_batch(&self, query: &str, documents: &[&str]) -> Vec<Score>;
 
     /// Score a single query-document pair.

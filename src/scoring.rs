@@ -1,8 +1,42 @@
-//! Scoring traits for dense and late-interaction retrieval.
+//! Scoring traits for retrieval refinement.
 //!
-//! - [`Scorer`] — Single-vector (dense) scoring
-//! - [`TokenScorer`] — Multi-vector (late interaction) scoring
-//! - [`Pooler`] — Token embedding compression
+//! This module provides a mathematical taxonomy of scoring functions:
+//!
+//! ## Taxonomy
+//!
+//! | Trait | Representation | Formula | Symmetry |
+//! |-------|----------------|---------|----------|
+//! | [`Scorer`] | Dense (1 vector) | `q · d` | Symmetric |
+//! | [`TokenScorer`] | Multi-vector (N tokens) | `Σᵢ maxⱼ(Qᵢ · Dⱼ)` | Asymmetric |
+//! | [`CrossEncoderModel`](crate::crossencoder::CrossEncoderModel) | Raw text | `NN([q; d])` | Asymmetric |
+//!
+//! ## Mathematical Properties
+//!
+//! **Dense scoring** (`Scorer`):
+//! - Models `f(q, d) = sim(E(q), E(d))` where E is an encoder
+//! - **Symmetric**: `score(q, d) = score(d, q)` for dot/cosine
+//! - **Bounded**: Cosine ∈ \[-1, 1\], dot unbounded
+//!
+//! **Late interaction** (`TokenScorer`, MaxSim):
+//! - Models `f(Q, D) = Σᵢ maxⱼ(Qᵢ · Dⱼ)` (sum of max similarities)
+//! - **Asymmetric**: Query tokens seek best doc matches, not vice versa
+//! - **Complexity**: O(M × N × d) where M=query tokens, N=doc tokens
+//! - **Advantage**: Preserves token-level semantics lost in dense pooling
+//!
+//! ## When to Use What
+//!
+//! ```text
+//! ┌─────────────┐   Millions    ┌─────────────┐   100-1000   ┌─────────────┐
+//! │   Dense     │ ──────────▶  │   MaxSim    │ ──────────▶  │Cross-Encoder│
+//! │  (recall)   │  candidates  │ (precision) │    top-K     │ (accuracy)  │
+//! └─────────────┘              └─────────────┘              └─────────────┘
+//! ```
+//!
+//! - **Dense**: Fast retrieval from large corpus (ANN-friendly)
+//! - **MaxSim**: Precise reranking of candidates (token alignment)
+//! - **Cross-encoder**: Final refinement when quality > speed
+//!
+//! ## Example
 //!
 //! ```rust
 //! use rank_refine::scoring::{DenseScorer, Scorer};
@@ -37,11 +71,22 @@ impl DenseScorer {
     }
 }
 
-/// Trait for dense (single-vector) scoring.
+/// Dense (single-vector) scoring: `f(q, d) = sim(q, d)`.
 ///
-/// Implement this for custom similarity functions.
+/// ## Mathematical Properties
+///
+/// - **Input**: Single embedding per query/document
+/// - **Symmetric**: `score(q, d) = score(d, q)` (for dot/cosine)
+/// - **Complexity**: O(d) where d = embedding dimension
+///
+/// ## Invariants
+///
+/// Implementations should satisfy:
+/// - `score(q, q) >= score(q, d)` for normalized q, d (self-similarity is maximal)
+/// - `score(αq, αd) = α² × score(q, d)` for dot product (bilinear)
+/// - `score(αq, βd) = score(q, d)` for cosine (scale-invariant)
 pub trait Scorer {
-    /// Score similarity between query and document.
+    /// Score similarity between query and document embeddings.
     fn score(&self, query: &[f32], doc: &[f32]) -> f32;
 
     /// Rank documents by score (descending).
@@ -87,11 +132,28 @@ impl LateInteractionScorer {
     }
 }
 
-/// Multi-vector scoring (late interaction).
+/// Late interaction scoring: `f(Q, D) = Σᵢ maxⱼ(Qᵢ · Dⱼ)`.
 ///
-/// Provides both slice-based (`&[&[f32]]`) and owned (`&[Vec<f32>]`) methods.
+/// ## Mathematical Properties
+///
+/// - **Input**: M query tokens, N document tokens (each d-dimensional)
+/// - **Asymmetric**: `score(Q, D) ≠ score(D, Q)` in general
+/// - **Complexity**: O(M × N × d)
+///
+/// ## Why Asymmetric?
+///
+/// Each query token finds its best-matching document token. The document
+/// provides a "vocabulary" from which query terms select. Reversing this
+/// would give document tokens selecting from query vocabulary—semantically
+/// different.
+///
+/// ## Invariants
+///
+/// - `score(Q, D) >= 0` when all embeddings have non-negative components
+/// - `score([q], [d]) = dot(q, d)` — single-token case reduces to dense
+/// - Adding a duplicate doc token doesn't change score (max is idempotent)
 pub trait TokenScorer {
-    /// Score similarity between query tokens and document tokens.
+    /// Score using late interaction (MaxSim: sum of max similarities).
     fn score_tokens(&self, query: &[&[f32]], doc: &[&[f32]]) -> f32;
 
     /// Score with owned vectors (convenience wrapper).
@@ -179,9 +241,31 @@ pub fn normalize_scores(scores: &[f32]) -> Vec<f32> {
 // Pooler Trait
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Token embedding compression.
+/// Token embedding compression (indexing-time only).
 ///
-/// Invariants: output.len() <= input.len(), dimension preserved, empty in → empty out.
+/// Pooling reduces storage by clustering semantically similar tokens.
+/// This is a **lossy** operation—some token-level information is lost.
+///
+/// ## Mathematical Properties
+///
+/// - **Dimensionality preserved**: output vectors have same dimension as input
+/// - **Cardinality reduced**: `|output| <= |input|`
+/// - **Centroid property**: each output is mean of its cluster members
+///
+/// ## Invariants
+///
+/// 1. `pool([], n).is_empty()` — empty input → empty output
+/// 2. `pool(tokens, n).len() <= tokens.len()` — never increases count
+/// 3. `pool(tokens, tokens.len()) == tokens` — target >= count is identity
+/// 4. Each output vector has same dimension as input vectors
+///
+/// ## Quality vs Speed
+///
+/// | Method | Quality | Speed | Best For |
+/// |--------|---------|-------|----------|
+/// | Ward clustering | High | O(n²) | Aggressive compression |
+/// | Greedy clustering | Good | O(n) | Moderate compression |
+/// | Sequential | Low | O(n) | Speed-critical |
 pub trait Pooler {
     /// Pool to approximately `target_count` vectors.
     fn pool(&self, tokens: &[Vec<f32>], target_count: usize) -> Vec<Vec<f32>>;
