@@ -366,6 +366,112 @@ mod tests {
         let query: Vec<&[f32]> = vec![&q1];
         assert_eq!(maxsim_cosine(&query, &[]), 0.0);
     }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // Mutation-killing tests: verify exact mathematical properties
+    // ───────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn cosine_zero_norm_returns_zero_not_nan() {
+        // When either vector has zero norm, cosine returns 0.0
+        // This tests the `> 0.0` check - changing to `>= 0.0` would cause NaN
+        let zero = [0.0, 0.0];
+        let nonzero = [1.0, 2.0];
+
+        let c1 = cosine(&zero, &nonzero);
+        let c2 = cosine(&nonzero, &zero);
+        let c3 = cosine(&zero, &zero);
+
+        assert_eq!(c1, 0.0, "cosine(zero, x) should be 0, got {}", c1);
+        assert_eq!(c2, 0.0, "cosine(x, zero) should be 0, got {}", c2);
+        assert_eq!(c3, 0.0, "cosine(zero, zero) should be 0, got {}", c3);
+        assert!(!c1.is_nan(), "should not return NaN");
+    }
+
+    #[test]
+    fn cosine_near_zero_norm_stable() {
+        // Very small norms below threshold return 0.0 for stability
+        let tiny = [1e-20, 0.0];
+        let normal = [1.0, 0.0];
+
+        let c = cosine(&tiny, &normal);
+        assert!(c.is_finite(), "cosine with tiny norm should be finite");
+        // Returns 0.0 for stability when norm < 1e-9
+        assert_eq!(c, 0.0, "tiny norm should return 0.0");
+
+        // Small but above threshold should work
+        let small = [1e-8, 0.0];
+        let c2 = cosine(&small, &normal);
+        assert!(c2.is_finite());
+        assert!((c2 - 1.0).abs() < 1e-3, "parallel vectors above threshold should have cosine ~1");
+    }
+
+    #[test]
+    fn dot_exact_orthogonal() {
+        // Orthogonal vectors have dot product 0
+        let a = [1.0, 0.0, 0.0];
+        let b = [0.0, 1.0, 0.0];
+        assert_eq!(dot(&a, &b), 0.0);
+    }
+
+    #[test]
+    fn dot_exact_parallel() {
+        // Parallel unit vectors have dot product 1
+        let a = [1.0, 0.0];
+        let b = [1.0, 0.0];
+        assert!((dot(&a, &b) - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn maxsim_single_query_single_doc() {
+        // Simplest case: 1 query token, 1 doc token
+        let q = [1.0, 2.0, 3.0];
+        let d = [4.0, 5.0, 6.0];
+
+        let query: Vec<&[f32]> = vec![&q];
+        let doc: Vec<&[f32]> = vec![&d];
+
+        let expected_dot = 1.0 * 4.0 + 2.0 * 5.0 + 3.0 * 6.0; // 4 + 10 + 18 = 32
+        let actual = maxsim(&query, &doc);
+
+        assert!(
+            (actual - expected_dot).abs() < 1e-5,
+            "expected {}, got {}",
+            expected_dot,
+            actual
+        );
+    }
+
+    #[test]
+    fn maxsim_sum_of_maxes() {
+        // MaxSim = sum over query tokens of max(dot with each doc token)
+        let q1 = [1.0, 0.0];
+        let q2 = [0.0, 1.0];
+        let d1 = [0.5, 0.0]; // dot(q1,d1)=0.5, dot(q2,d1)=0.0
+        let d2 = [0.0, 0.8]; // dot(q1,d2)=0.0, dot(q2,d2)=0.8
+
+        let query: Vec<&[f32]> = vec![&q1, &q2];
+        let doc: Vec<&[f32]> = vec![&d1, &d2];
+
+        // max for q1 is 0.5 (from d1), max for q2 is 0.8 (from d2)
+        let expected = 0.5 + 0.8;
+        let actual = maxsim(&query, &doc);
+
+        assert!(
+            (actual - expected).abs() < 1e-5,
+            "expected {}, got {}",
+            expected,
+            actual
+        );
+    }
+
+    #[test]
+    fn norm_exact_values() {
+        // Test exact norm calculations
+        assert!((norm(&[3.0, 4.0]) - 5.0).abs() < 1e-9, "3-4-5 triangle");
+        assert!((norm(&[1.0, 0.0]) - 1.0).abs() < 1e-9, "unit x");
+        assert!((norm(&[0.0, 0.0]) - 0.0).abs() < 1e-9, "zero vector");
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

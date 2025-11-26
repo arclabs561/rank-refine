@@ -237,6 +237,57 @@ impl Pooler for AdaptivePooler {
     }
 }
 
+/// Custom pooler using a user-provided function.
+///
+/// Useful for experimentation or domain-specific pooling strategies.
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::scoring::{FnPooler, Pooler};
+///
+/// // Simple mean pooling: collapse all tokens into one
+/// let mean_pool = FnPooler::new(|tokens: &[Vec<f32>], _target| {
+///     if tokens.is_empty() { return vec![]; }
+///     let dim = tokens[0].len();
+///     let mut mean = vec![0.0; dim];
+///     for tok in tokens {
+///         for (i, &v) in tok.iter().enumerate() {
+///             mean[i] += v;
+///         }
+///     }
+///     let n = tokens.len() as f32;
+///     for v in &mut mean { *v /= n; }
+///     vec![mean]
+/// });
+///
+/// let tokens = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+/// let pooled = mean_pool.pool(&tokens, 1);
+/// assert_eq!(pooled.len(), 1);
+/// ```
+pub struct FnPooler<F> {
+    pool_fn: F,
+}
+
+impl<F> FnPooler<F>
+where
+    F: Fn(&[Vec<f32>], usize) -> Vec<Vec<f32>>,
+{
+    /// Create a new function-based pooler.
+    pub const fn new(pool_fn: F) -> Self {
+        Self { pool_fn }
+    }
+}
+
+impl<F> Pooler for FnPooler<F>
+where
+    F: Fn(&[Vec<f32>], usize) -> Vec<Vec<f32>>,
+{
+    fn pool(&self, tokens: &[Vec<f32>], target_count: usize) -> Vec<Vec<f32>> {
+        (self.pool_fn)(tokens, target_count)
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
@@ -334,6 +385,53 @@ mod tests {
 
         let ranked = scorer.rank_vecs(&query, &docs);
         assert_eq!(ranked[0].0, "d2"); // aligned doc should rank first
+    }
+
+    #[test]
+    fn test_fn_pooler_custom() {
+        // Custom pooler: always returns first token only
+        let first_only = FnPooler::new(|tokens: &[Vec<f32>], _target| {
+            if tokens.is_empty() {
+                vec![]
+            } else {
+                vec![tokens[0].clone()]
+            }
+        });
+
+        let tokens = vec![vec![1.0, 0.0], vec![0.0, 1.0], vec![0.5, 0.5]];
+        let pooled = first_only.pool(&tokens, 1);
+
+        assert_eq!(pooled.len(), 1);
+        assert_eq!(pooled[0], vec![1.0, 0.0]);
+    }
+
+    #[test]
+    fn test_fn_pooler_mean() {
+        // Mean pooling implementation
+        let mean_pool = FnPooler::new(|tokens: &[Vec<f32>], _target| {
+            if tokens.is_empty() {
+                return vec![];
+            }
+            let dim = tokens[0].len();
+            let mut mean = vec![0.0; dim];
+            for tok in tokens {
+                for (i, &v) in tok.iter().enumerate() {
+                    mean[i] += v;
+                }
+            }
+            let n = tokens.len() as f32;
+            for v in &mut mean {
+                *v /= n;
+            }
+            vec![mean]
+        });
+
+        let tokens = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+        let pooled = mean_pool.pool(&tokens, 1);
+
+        assert_eq!(pooled.len(), 1);
+        assert!((pooled[0][0] - 0.5).abs() < 1e-5);
+        assert!((pooled[0][1] - 0.5).abs() < 1e-5);
     }
 }
 

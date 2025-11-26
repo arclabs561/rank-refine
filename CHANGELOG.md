@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.11] - 2025-11-26
+
+### Added
+- `FnPooler` for custom pooling strategies via closures
+- Exported `FnPooler` in prelude
+- Tests for custom pooling implementations
+
 ## [0.7.10] - 2025-11-26
 
 ### Added

@@ -68,8 +68,10 @@ pub mod simd;
 /// use rank_refine::prelude::*;
 /// ```
 pub mod prelude {
-    // Traits
-    pub use crate::scoring::{DenseScorer, LateInteractionScorer, Pooler, Scorer, TokenScorer};
+    // Traits and types
+    pub use crate::scoring::{
+        DenseScorer, FnPooler, LateInteractionScorer, Pooler, Scorer, TokenScorer,
+    };
 
     // SIMD functions
     pub use crate::simd::{cosine, dot, maxsim, maxsim_cosine, maxsim_vecs, norm};
