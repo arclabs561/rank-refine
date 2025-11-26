@@ -1,7 +1,8 @@
 [package]
 name = "rank-refine"
-version = "0.7.2"
+version = "0.7.4"
 edition = "2021"
+rust-version = "1.74"
 license = "MIT OR Apache-2.0"
 description = "Fast reranking — Matryoshka, ColBERT MaxSim, Cross-encoder (SIMD-accelerated)"
 keywords = ["search", "rerank", "colbert", "matryoshka", "simd"]

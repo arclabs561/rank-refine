@@ -55,6 +55,47 @@
 //! }
 //! ```
 //!
+//! ## Complete Pipeline Example
+//!
+//! Here's a realistic two-stage retrieval pipeline:
+//!
+//! ```rust
+//! use rank_refine::{simd, colbert, scoring::{Scorer, DenseScorer, AdaptivePooler, Pooler}};
+//!
+//! // Stage 1: Fast dense retrieval (your embeddings, our math)
+//! let query_dense: Vec<f32> = vec![0.1, 0.2, 0.3, 0.4]; // from your embedding model
+//! let docs_dense = vec![
+//!     ("doc1", vec![0.15, 0.25, 0.35, 0.45]),
+//!     ("doc2", vec![0.9, 0.1, 0.0, 0.0]),
+//! ];
+//!
+//! let scorer = DenseScorer::Cosine;
+//! let doc_refs: Vec<(&str, &[f32])> = docs_dense.iter()
+//!     .map(|(id, emb)| (*id, emb.as_slice()))
+//!     .collect();
+//! let first_stage: Vec<(&str, f32)> = scorer.rank(&query_dense, &doc_refs);
+//!
+//! // Stage 2: Refine top-k with ColBERT (late interaction)
+//! let query_tokens: Vec<Vec<f32>> = vec![
+//!     vec![0.1, 0.9, 0.0, 0.0], // token 1
+//!     vec![0.0, 0.1, 0.8, 0.1], // token 2
+//! ];
+//! let doc_tokens = vec![
+//!     ("doc1", vec![vec![0.2, 0.8, 0.1, 0.0], vec![0.0, 0.2, 0.7, 0.1]]),
+//!     ("doc2", vec![vec![0.9, 0.1, 0.0, 0.0]]),
+//! ];
+//!
+//! // Optional: compress token embeddings for storage efficiency
+//! let pooler = AdaptivePooler;
+//! let doc1_pooled = pooler.pool_by_factor(&doc_tokens[0].1, 2);
+//!
+//! // Compute MaxSim score
+//! let q_refs: Vec<&[f32]> = query_tokens.iter().map(Vec::as_slice).collect();
+//! let d_refs: Vec<&[f32]> = doc_tokens[0].1.iter().map(Vec::as_slice).collect();
+//! let maxsim = simd::maxsim(&q_refs, &d_refs);
+//! assert!(maxsim > 0.0);
+//! ```
+//!
 //! ## Error Handling
 //!
 //! Functions return [`Result<T, RefineError>`] for invalid inputs.
@@ -105,6 +146,18 @@ impl std::error::Error for RefineError {}
 
 /// Result type for refinement operations.
 pub type Result<T> = std::result::Result<T, RefineError>;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sorting Utilities
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Sort scored results in descending order (highest score first).
+///
+/// Uses `f32::total_cmp` for deterministic ordering of NaN values.
+#[inline]
+pub(crate) fn sort_scored_desc<T>(results: &mut [(T, f32)]) {
+    results.sort_by(|a, b| b.1.total_cmp(&a.1));
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
@@ -172,58 +225,3 @@ impl RefineConfig {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Newtypes for Type Safety
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// A single dense embedding vector.
-#[derive(Debug, Clone)]
-pub struct Embedding(pub Vec<f32>);
-
-impl AsRef<[f32]> for Embedding {
-    fn as_ref(&self) -> &[f32] {
-        &self.0
-    }
-}
-
-impl From<Vec<f32>> for Embedding {
-    fn from(v: Vec<f32>) -> Self {
-        Self(v)
-    }
-}
-
-/// Token-level embeddings for ColBERT-style models.
-#[derive(Debug, Clone)]
-pub struct TokenEmbeddings(pub Vec<Vec<f32>>);
-
-impl TokenEmbeddings {
-    /// Number of tokens.
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    /// Whether empty.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    /// Get token embedding dimension (0 if empty).
-    #[must_use]
-    pub fn dim(&self) -> usize {
-        self.0.first().map_or(0, Vec::len)
-    }
-}
-
-impl From<Vec<Vec<f32>>> for TokenEmbeddings {
-    fn from(v: Vec<Vec<f32>>) -> Self {
-        Self(v)
-    }
-}
-
-impl AsRef<[Vec<f32>]> for TokenEmbeddings {
-    fn as_ref(&self) -> &[Vec<f32>] {
-        &self.0
-    }
-}

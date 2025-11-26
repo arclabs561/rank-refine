@@ -140,7 +140,7 @@ pub fn try_refine<I: Clone + Eq + Hash>(
         })
         .collect();
 
-    results.sort_by(|a, b| b.1.total_cmp(&a.1));
+    crate::sort_scored_desc(&mut results);
 
     if let Some(k) = config.top_k {
         results.truncate(k);

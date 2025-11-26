@@ -72,7 +72,7 @@ pub trait Scorer {
             .iter()
             .map(|(id, doc)| (id.clone(), self.score(query, doc)))
             .collect();
-        results.sort_by(|a, b| b.1.total_cmp(&a.1));
+        crate::sort_scored_desc(&mut results);
         results
     }
 }
@@ -123,7 +123,7 @@ pub trait TokenScorer {
             .iter()
             .map(|(id, doc_tokens)| (id.clone(), self.score_tokens(query, doc_tokens)))
             .collect();
-        results.sort_by(|a, b| b.1.total_cmp(&a.1));
+        crate::sort_scored_desc(&mut results);
         results
     }
 }

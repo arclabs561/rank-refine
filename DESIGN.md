@@ -80,20 +80,18 @@ Protected tokens (like `[CLS]` and `[D]` markers) can be preserved during poolin
 The `scoring` module provides unified traits:
 
 ```rust
-// Dense scoring
 pub trait Scorer {
     fn score(&self, query: &[f32], doc: &[f32]) -> f32;
     fn rank<I: Clone>(&self, query: &[f32], docs: &[(I, &[f32])]) -> Vec<(I, f32)>;
 }
 
-// Late interaction scoring
 pub trait TokenScorer {
     fn score_tokens(&self, query: &[&[f32]], doc: &[&[f32]]) -> f32;
-    fn rank_tokens<I: Clone>(&self, query: &[&[f32]], docs: &[(I, Vec<&[f32]>)]) -> Vec<(I, f32)>;
+    fn rank_tokens<I: Clone>(&self, query: &[&[f32]], docs: &[(I, &[&[f32]])]) -> Vec<(I, f32)>;
 }
 ```
 
-This enables swapping scoring strategies without changing pipeline code.
+Implementations: `DenseScorer` (Dot, Cosine) and `LateInteractionScorer` (MaxSimDot, MaxSimCosine).
 
 ## NaN Handling
 

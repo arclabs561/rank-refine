@@ -70,8 +70,7 @@ pub fn rerank<I: Clone, M: CrossEncoderModel>(
         .map(|((id, _), score)| (id.clone(), score))
         .collect();
 
-    // Use total_cmp for deterministic sorting (handles NaN)
-    results.sort_by(|a, b| b.1.total_cmp(&a.1));
+    crate::sort_scored_desc(&mut results);
     results
 }
 
@@ -118,8 +117,7 @@ pub fn refine<I: Clone, M: CrossEncoderModel>(
         })
         .collect();
 
-    // Use total_cmp for deterministic sorting (handles NaN)
-    results.sort_by(|a, b| b.1.total_cmp(&a.1));
+    crate::sort_scored_desc(&mut results);
     results
 }
 

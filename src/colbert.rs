@@ -386,7 +386,7 @@ pub fn rank_with_top_k<I: Clone>(
         })
         .collect();
 
-    results.sort_by(|a, b| b.1.total_cmp(&a.1));
+    crate::sort_scored_desc(&mut results);
 
     if let Some(k) = top_k {
         results.truncate(k);
@@ -442,7 +442,7 @@ pub fn refine_with_config<I: Clone + Eq + std::hash::Hash>(
         })
         .collect();
 
-    results.sort_by(|a, b| b.1.total_cmp(&a.1));
+    crate::sort_scored_desc(&mut results);
 
     if let Some(k) = config.top_k {
         results.truncate(k);

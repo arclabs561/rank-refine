@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.7.4] - 2025-11-26
+
+### Added
+- MSRV 1.74 to Cargo.toml
+- CI caching with `Swatinem/rust-cache`
+- MSRV CI job
+- Cross-link to rank-fusion in README
+
+### Removed
+- Unused `Embedding` and `TokenEmbeddings` newtypes (API uses raw slices)
+
+### Fixed
+- DESIGN.md trait signatures now match actual code
+
+## [0.7.3] - 2025-11-26
+
+### Added
+- Complete pipeline example in lib.rs documentation
+- `sort_scored_desc()` internal helper to deduplicate sorting logic
+- Improved README with BYOM (Bring Your Own Model) explanation
+- Features table in README
+
+### Changed
+- Clarified that tests use synthetic vectors (no model downloads required)
+- Better module documentation emphasizing model-agnostic design
+
 ## [0.7.2] - 2025-11-26
 
 ### Added
