@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.15] - 2025-11-26
+
+### Changed
+- Clarified indexing vs query-time phases in README and DESIGN.md
+- Added ASCII workflow diagram for late interaction pipeline
+- Documented tricks from PyLate, ColPali implementations
+- Added "When to Use Which Algorithm" indexing/query explanation
+
 ## [0.7.14] - 2025-11-26
 
 ### Changed

@@ -51,6 +51,35 @@ about capitals in general. Late interaction's token-level matching finds documen
 **Trade-off**: Late interaction costs more storage (128 tokens × 128 dims vs 1 × 768)
 but yields 5-15% better recall on complex queries.
 
+## Indexing vs Query Time
+
+Late interaction has distinct **indexing** and **query** phases:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  INDEXING (Offline, One-time)                                   │
+│                                                                 │
+│  Document → Encode → Reduce Dims → Pool Tokens → Quantize → DB  │
+│             (model)  (768→128)     (cluster)    (2-bit)         │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│  QUERY (Online, Per-request)                                    │
+│                                                                 │
+│  Query → Encode → Candidate Gen → MaxSim Score → Top-K          │
+│          (model)  (ANN/PLAID)     (this crate)                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**What this crate provides**:
+- Query-time: `maxsim`, `rank`, `refine` (fast, CPU-optimized)
+- Indexing-time: `pool_tokens`, `pool_tokens_hierarchical` (run once, store results)
+
+**What you bring**:
+- Embeddings (from fastembed, ort, sentence-transformers, etc.)
+- Storage (qdrant, milvus, in-memory Vec, etc.)
+- Candidate generation (ANN from your vector DB)
+
 ## Token Pooling
 
 Storage can be reduced via token pooling without significant quality loss. From
@@ -59,7 +88,8 @@ Storage can be reduced via token pooling without significant quality loss. From
 - **Factor 2 (50% reduction)**: Virtually no retrieval degradation
 - **Factor 3-4 (66-75% reduction)**: <5% degradation on most datasets
 
-Key insight: Pooling happens at **indexing time only** — no query-time processing needed.
+Key insight: **Pooling happens at indexing time only** — documents are pooled once,
+stored, and then scored against un-pooled queries. No query-time processing needed.
 
 ### Clustering Methods
 
@@ -180,6 +210,16 @@ Based on review of production Rust implementations:
 - Four-way loop unrolling in AVX (32 elements/iteration for dot product)
 - Separate `hsum256_ps` for horizontal sum
 - Dimension threshold to skip SIMD overhead for small vectors
+
+**From PyLate** (LightOn):
+- `torch.einsum("ash,bth->abst", Q, D)` for batched MaxSim
+- Attention mask support for padding tokens
+- Separate `colbert_scores_pairwise` for 1:1 scoring
+
+**From ColPali** (illuin-tech):
+- `pad_sequence` for variable-length token batches
+- FastPLAID integration for indexed search
+- Both single-vector and multi-vector scoring in same API
 
 **From vindicator**:
 - `SmallVec<[_; 4]>` for score collection (avoids heap for small fusions)

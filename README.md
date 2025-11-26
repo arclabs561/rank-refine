@@ -115,6 +115,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 | Matryoshka (MRL) embeddings | `mrl_refine` | Tail dimensions refine coarse prefix scores |
 | Model you can call | `CrossEncoderModel` trait | Most accurate, but requires inference |
 
+### Indexing vs Query Time
+
+Late interaction (ColBERT) requires pre-computed token embeddings. The workflow:
+
+```
+INDEXING (once per document):
+  doc → model.encode() → pool_tokens() → store in DB
+
+QUERY (per request):
+  query → model.encode() → rank-refine → top-K
+  candidates from DB  ────────┘
+```
+
+Functions like `pool_tokens` are for **indexing time** — run them once and store results.
+Functions like `maxsim_vecs` and `rank` are for **query time** — run them per query on candidates.
+
 ## Modules
 
 | Module | Purpose |
