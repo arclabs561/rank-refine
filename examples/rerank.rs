@@ -47,7 +47,7 @@ fn main() {
         ("doc_b", vec![0.4, 0.6, 0.2, 0.1, 0.1, 0.2, 0.3, 0.2]),
         ("doc_c", vec![0.1, 0.1, 0.9, 0.8, 0.1, 0.1, 0.1, 0.1]),
     ];
-    
+
     // Initial scores using first 4 dims (head)
     let initial: Vec<(&str, f32)> = docs_8d
         .iter()
@@ -60,4 +60,3 @@ fn main() {
     let refined = rank_refine::matryoshka::refine(&initial, &query_8d, &docs_8d, 4);
     println!("Refined (8-dim full): {:?}", refined);
 }
-

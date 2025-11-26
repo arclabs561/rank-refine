@@ -403,7 +403,10 @@ mod tests {
         let small = [1e-8, 0.0];
         let c2 = cosine(&small, &normal);
         assert!(c2.is_finite());
-        assert!((c2 - 1.0).abs() < 1e-3, "parallel vectors above threshold should have cosine ~1");
+        assert!(
+            (c2 - 1.0).abs() < 1e-3,
+            "parallel vectors above threshold should have cosine ~1"
+        );
     }
 
     #[test]
