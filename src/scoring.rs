@@ -174,6 +174,76 @@ pub fn normalize_scores(scores: &[f32]) -> Vec<f32> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Pooler Trait
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Trait for token pooling strategies.
+///
+/// Pooling reduces the number of token embeddings while preserving semantic
+/// information. Different strategies trade off quality vs speed.
+pub trait Pooler {
+    /// Pool tokens to approximately `target_count` vectors.
+    ///
+    /// # Invariants
+    ///
+    /// - `pool(tokens).len() <= tokens.len()`
+    /// - `pool(tokens).iter().all(|t| t.len() == dim)` (dimension preserved)
+    /// - `pool(&[]).is_empty()`
+    fn pool(&self, tokens: &[Vec<f32>], target_count: usize) -> Vec<Vec<f32>>;
+
+    /// Pool with a compression factor (e.g., 2 = 50% reduction).
+    fn pool_by_factor(&self, tokens: &[Vec<f32>], factor: usize) -> Vec<Vec<f32>> {
+        if tokens.is_empty() || factor <= 1 {
+            return tokens.to_vec();
+        }
+        let target = (tokens.len() / factor).max(1);
+        self.pool(tokens, target)
+    }
+}
+
+/// Sequential window pooling (fastest, position-aware).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SequentialPooler;
+
+impl Pooler for SequentialPooler {
+    fn pool(&self, tokens: &[Vec<f32>], target_count: usize) -> Vec<Vec<f32>> {
+        if tokens.is_empty() || target_count >= tokens.len() {
+            return tokens.to_vec();
+        }
+        let window = tokens.len().div_ceil(target_count);
+        crate::colbert::pool_tokens_sequential(tokens, window)
+    }
+}
+
+/// Greedy clustering pooler (default, quality-focused).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ClusteringPooler;
+
+impl Pooler for ClusteringPooler {
+    fn pool(&self, tokens: &[Vec<f32>], target_count: usize) -> Vec<Vec<f32>> {
+        if tokens.is_empty() || target_count >= tokens.len() {
+            return tokens.to_vec();
+        }
+        let factor = tokens.len().div_ceil(target_count);
+        crate::colbert::pool_tokens(tokens, factor)
+    }
+}
+
+/// Adaptive pooler that chooses the best strategy based on compression factor.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AdaptivePooler;
+
+impl Pooler for AdaptivePooler {
+    fn pool(&self, tokens: &[Vec<f32>], target_count: usize) -> Vec<Vec<f32>> {
+        if tokens.is_empty() || target_count >= tokens.len() {
+            return tokens.to_vec();
+        }
+        let factor = tokens.len().div_ceil(target_count);
+        crate::colbert::pool_tokens_adaptive(tokens, factor)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -401,6 +471,127 @@ mod proptests {
             let scorer = DenseScorer::Cosine;
             let score = scorer.score(&a, &b);
             prop_assert!(score >= -1.01 && score <= 1.01, "Cosine {} out of bounds", score);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // Pooler trait invariants
+        // ─────────────────────────────────────────────────────────────────────────
+
+        /// Pooler invariant: output count <= input count
+        #[test]
+        fn pooler_never_increases_count(n_tokens in 2usize..16, dim in 2usize..8, target in 1usize..8) {
+            let tokens: Vec<Vec<f32>> = (0..n_tokens)
+                .map(|i| (0..dim).map(|j| ((i * dim + j) as f32 * 0.1).sin()).collect())
+                .collect();
+
+            let seq = SequentialPooler.pool(&tokens, target);
+            let cluster = ClusteringPooler.pool(&tokens, target);
+            let adaptive = AdaptivePooler.pool(&tokens, target);
+
+            prop_assert!(seq.len() <= n_tokens, "Sequential increased count: {} -> {}", n_tokens, seq.len());
+            prop_assert!(cluster.len() <= n_tokens, "Clustering increased count: {} -> {}", n_tokens, cluster.len());
+            prop_assert!(adaptive.len() <= n_tokens, "Adaptive increased count: {} -> {}", n_tokens, adaptive.len());
+        }
+
+        /// Pooler invariant: dimension preserved
+        #[test]
+        fn pooler_preserves_dimension(n_tokens in 2usize..16, dim in 2usize..16, factor in 2usize..4) {
+            let tokens: Vec<Vec<f32>> = (0..n_tokens)
+                .map(|i| (0..dim).map(|j| ((i * dim + j) as f32 * 0.1).sin()).collect())
+                .collect();
+
+            let seq = SequentialPooler.pool_by_factor(&tokens, factor);
+            let cluster = ClusteringPooler.pool_by_factor(&tokens, factor);
+            let adaptive = AdaptivePooler.pool_by_factor(&tokens, factor);
+
+            prop_assert!(seq.iter().all(|t| t.len() == dim), "Sequential changed dim");
+            prop_assert!(cluster.iter().all(|t| t.len() == dim), "Clustering changed dim");
+            prop_assert!(adaptive.iter().all(|t| t.len() == dim), "Adaptive changed dim");
+        }
+
+        /// Pooler invariant: empty input returns empty
+        #[test]
+        fn pooler_empty_input(target in 1usize..10) {
+            let empty: Vec<Vec<f32>> = vec![];
+
+            prop_assert!(SequentialPooler.pool(&empty, target).is_empty());
+            prop_assert!(ClusteringPooler.pool(&empty, target).is_empty());
+            prop_assert!(AdaptivePooler.pool(&empty, target).is_empty());
+        }
+
+        /// Pooler invariant: factor 1 returns original
+        #[test]
+        fn pooler_factor_one_identity(n_tokens in 1usize..8, dim in 2usize..8) {
+            let tokens: Vec<Vec<f32>> = (0..n_tokens)
+                .map(|i| (0..dim).map(|j| (i + j) as f32 * 0.1).collect())
+                .collect();
+
+            let seq = SequentialPooler.pool_by_factor(&tokens, 1);
+            let cluster = ClusteringPooler.pool_by_factor(&tokens, 1);
+            let adaptive = AdaptivePooler.pool_by_factor(&tokens, 1);
+
+            prop_assert_eq!(seq.len(), n_tokens);
+            prop_assert_eq!(cluster.len(), n_tokens);
+            prop_assert_eq!(adaptive.len(), n_tokens);
+        }
+
+        /// TokenScorer rank produces sorted output
+        #[test]
+        fn token_scorer_rank_is_sorted(n_docs in 2usize..6, n_q in 1usize..3, dim in 2usize..8) {
+            let query: Vec<Vec<f32>> = (0..n_q)
+                .map(|i| (0..dim).map(|j| ((i * dim + j) as f32 * 0.1).sin()).collect())
+                .collect();
+            let docs: Vec<(u32, Vec<Vec<f32>>)> = (0..n_docs as u32)
+                .map(|i| {
+                    let toks: Vec<Vec<f32>> = (0..3)
+                        .map(|t| (0..dim).map(|j| ((i as usize * 3 + t + j) as f32 * 0.1).cos()).collect())
+                        .collect();
+                    (i, toks)
+                })
+                .collect();
+
+            let query_refs: Vec<&[f32]> = query.iter().map(Vec::as_slice).collect();
+            let doc_refs: Vec<(u32, Vec<&[f32]>)> = docs.iter()
+                .map(|(id, toks)| (*id, toks.iter().map(Vec::as_slice).collect()))
+                .collect();
+
+            let scorer = LateInteractionScorer::MaxSimDot;
+            let ranked = scorer.rank_tokens(&query_refs, &doc_refs);
+
+            for window in ranked.windows(2) {
+                prop_assert!(
+                    window[0].1 >= window[1].1 - 1e-6,
+                    "Not sorted: {} >= {}",
+                    window[0].1,
+                    window[1].1
+                );
+            }
+        }
+
+        /// TokenScorer rank preserves count
+        #[test]
+        fn token_scorer_rank_preserves_count(n_docs in 1usize..6, n_q in 1usize..3, dim in 2usize..8) {
+            let query: Vec<Vec<f32>> = (0..n_q)
+                .map(|i| (0..dim).map(|j| ((i * dim + j) as f32 * 0.1).sin()).collect())
+                .collect();
+            let docs: Vec<(u32, Vec<Vec<f32>>)> = (0..n_docs as u32)
+                .map(|i| {
+                    let toks: Vec<Vec<f32>> = (0..2)
+                        .map(|t| (0..dim).map(|j| ((i as usize * 2 + t + j) as f32 * 0.1).cos()).collect())
+                        .collect();
+                    (i, toks)
+                })
+                .collect();
+
+            let query_refs: Vec<&[f32]> = query.iter().map(Vec::as_slice).collect();
+            let doc_refs: Vec<(u32, Vec<&[f32]>)> = docs.iter()
+                .map(|(id, toks)| (*id, toks.iter().map(Vec::as_slice).collect()))
+                .collect();
+
+            let scorer = LateInteractionScorer::MaxSimDot;
+            let ranked = scorer.rank_tokens(&query_refs, &doc_refs);
+
+            prop_assert_eq!(ranked.len(), n_docs);
         }
     }
 }
