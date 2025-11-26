@@ -1,0 +1,27 @@
+[package]
+name = "rank-refine"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Model-based reranking for retrieval pipelines — Cross-encoder, Matryoshka, ColBERT/PLAID"
+keywords = ["search", "rerank", "cross-encoder", "matryoshka", "colbert"]
+categories = ["algorithms", "science"]
+repository = "https://github.com/arclabs561/rank-refine"
+readme = "README.md"
+authors = ["Arc <attobop@gmail.com>"]
+
+[dependencies]
+# Core (no heavy deps yet - add candle/ort as optional features later)
+
+[dev-dependencies]
+criterion = "0.5"
+
+[features]
+default = []
+# candle = ["dep:candle-core", "dep:candle-nn"]
+# ort = ["dep:ort"]
+
+[[bench]]
+name = "refine"
+harness = false
+
