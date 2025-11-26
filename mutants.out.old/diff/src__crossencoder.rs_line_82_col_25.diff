@@ -1,0 +1,21 @@
+--- src/crossencoder.rs
++++ replace - with + in refine
+@@ -74,17 +74,17 @@
+     let ce_scores = model.score_batch(query, &docs);
+ 
+     // Normalize CE scores to [0, 1]
+     let (min_ce, max_ce) = ce_scores
+         .iter()
+         .fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), &s| {
+             (lo.min(s), hi.max(s))
+         });
+-    let range = (max_ce - min_ce).max(1e-9);
++    let range = (max_ce + /* ~ changed by cargo-mutants ~ */ min_ce).max(1e-9);
+ 
+     let mut results: Vec<(I, Score)> = candidates
+         .iter()
+         .zip(ce_scores)
+         .map(|((id, _, orig), ce)| {
+             let ce_norm = (ce - min_ce) / range;
+             // Use mul_add for better precision
+             let blended = (1.0 - alpha).mul_add(ce_norm, alpha * orig);

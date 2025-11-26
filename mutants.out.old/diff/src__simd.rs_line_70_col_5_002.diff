@@ -1,0 +1,32 @@
+--- src/simd.rs
++++ replace maxsim -> f32 with 1.0
+@@ -62,28 +62,17 @@
+ ///
+ /// Used by ColBERT/PLAID for late interaction scoring.
+ ///
+ /// Returns 0.0 if `query_tokens` is empty.
+ /// Returns 0.0 if `doc_tokens` is empty (no matches possible).
+ #[inline]
+ #[must_use]
+ pub fn maxsim(query_tokens: &[&[f32]], doc_tokens: &[&[f32]]) -> f32 {
+-    if query_tokens.is_empty() || doc_tokens.is_empty() {
+-        return 0.0;
+-    }
+-    query_tokens
+-        .iter()
+-        .map(|q| {
+-            doc_tokens
+-                .iter()
+-                .map(|d| dot(q, d))
+-                .fold(f32::NEG_INFINITY, f32::max)
+-        })
+-        .sum()
++    1.0 /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// `MaxSim` with cosine similarity instead of dot product.
+ #[inline]
+ #[must_use]
+ pub fn maxsim_cosine(query_tokens: &[&[f32]], doc_tokens: &[&[f32]]) -> f32 {
+     if query_tokens.is_empty() || doc_tokens.is_empty() {
+         return 0.0;

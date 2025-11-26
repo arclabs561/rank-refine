@@ -1,0 +1,21 @@
+--- src/simd.rs
++++ replace || with && in maxsim_cosine
+@@ -80,17 +80,17 @@
+         })
+         .sum()
+ }
+ 
+ /// `MaxSim` with cosine similarity instead of dot product.
+ #[inline]
+ #[must_use]
+ pub fn maxsim_cosine(query_tokens: &[&[f32]], doc_tokens: &[&[f32]]) -> f32 {
+-    if query_tokens.is_empty() || doc_tokens.is_empty() {
++    if query_tokens.is_empty() && /* ~ changed by cargo-mutants ~ */ doc_tokens.is_empty() {
+         return 0.0;
+     }
+     query_tokens
+         .iter()
+         .map(|q| {
+             doc_tokens
+                 .iter()
+                 .map(|d| cosine(q, d))

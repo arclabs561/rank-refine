@@ -1,0 +1,37 @@
+--- src/scoring.rs
++++ replace normalize_scores -> Vec<f32> with vec![-1.0]
+@@ -151,33 +151,17 @@
+     (1.0 - alpha).mul_add(score_b, alpha * score_a)
+ }
+ 
+ /// Normalize scores to \[0, 1\] range.
+ ///
+ /// Returns original scores if all values are equal (avoids division by zero).
+ #[must_use]
+ pub fn normalize_scores(scores: &[f32]) -> Vec<f32> {
+-    if scores.is_empty() {
+-        return Vec::new();
+-    }
+-
+-    let (min, max) = scores
+-        .iter()
+-        .fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), &s| {
+-            (lo.min(s), hi.max(s))
+-        });
+-
+-    let range = max - min;
+-    if range < 1e-9 {
+-        // All scores equal, return 0.5 for all
+-        return vec![0.5; scores.len()];
+-    }
+-
+-    scores.iter().map(|&s| (s - min) / range).collect()
++    vec![-1.0] /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ // ─────────────────────────────────────────────────────────────────────────────
+ // Pooler Trait
+ // ─────────────────────────────────────────────────────────────────────────────
+ 
+ /// Token embedding compression.
+ ///

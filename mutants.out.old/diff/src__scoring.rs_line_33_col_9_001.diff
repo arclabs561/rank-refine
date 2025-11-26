@@ -1,0 +1,24 @@
+--- src/scoring.rs
++++ replace DenseScorer::score -> f32 with 1.0
+@@ -25,20 +25,17 @@
+     /// Cosine similarity (normalizes vectors).
+     Cosine,
+ }
+ 
+ impl DenseScorer {
+     /// Score similarity between query and document embeddings.
+     #[must_use]
+     pub fn score(&self, query: &[f32], doc: &[f32]) -> f32 {
+-        match self {
+-            Self::Dot => simd::dot(query, doc),
+-            Self::Cosine => simd::cosine(query, doc),
+-        }
++        1.0 /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ /// Trait for dense (single-vector) scoring.
+ ///
+ /// Implement this for custom similarity functions.
+ pub trait Scorer {
+     /// Score similarity between query and document.

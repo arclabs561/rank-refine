@@ -1,0 +1,21 @@
+--- src/scoring.rs
++++ replace >= with < in <impl Pooler for SequentialPooler>::pool
+@@ -196,17 +196,17 @@
+ }
+ 
+ /// Sequential window pooling (fastest, position-aware).
+ #[derive(Debug, Clone, Copy, Default)]
+ pub struct SequentialPooler;
+ 
+ impl Pooler for SequentialPooler {
+     fn pool(&self, tokens: &[Vec<f32>], target_count: usize) -> Vec<Vec<f32>> {
+-        if tokens.is_empty() || target_count >= tokens.len() {
++        if tokens.is_empty() || target_count < /* ~ changed by cargo-mutants ~ */ tokens.len() {
+             return tokens.to_vec();
+         }
+         let window = tokens.len().div_ceil(target_count);
+         crate::colbert::pool_tokens_sequential(tokens, window)
+     }
+ }
+ 
+ /// Greedy clustering pooler (default, quality-focused).

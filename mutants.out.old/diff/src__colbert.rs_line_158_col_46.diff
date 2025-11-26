@@ -1,0 +1,21 @@
+--- src/colbert.rs
++++ delete - in pool_tokens_hierarchical
+@@ -150,17 +150,17 @@
+     // Build condensed distance matrix (upper triangular, row-major)
+     // Distance = 1 - cosine_similarity (so similar tokens have low distance)
+     // kodama requires all values to be finite non-NaN
+     let mut condensed = Vec::with_capacity(n * (n - 1) / 2);
+     for i in 0..n {
+         for j in (i + 1)..n {
+             let sim = simd::cosine(&tokens[i], &tokens[j]);
+             // Handle NaN (from zero-norm vectors) by treating as max distance
+-            let sim_safe = if sim.is_nan() { -1.0 } else { sim };
++            let sim_safe = if sim.is_nan() {  /* ~ changed by cargo-mutants ~ */1.0 } else { sim };
+             // Convert similarity to distance, clamped to [0, 2]
+             #[allow(clippy::cast_lossless)]
+             let dist = f64::from((1.0 - sim_safe).clamp(0.0, 2.0));
+             condensed.push(dist);
+         }
+     }
+ 
+     // Run Ward's method linkage

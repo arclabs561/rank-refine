@@ -1,0 +1,21 @@
+--- src/colbert.rs
++++ replace - with + in refine_with_config
+@@ -437,17 +437,17 @@
+     let alpha = config.alpha;
+ 
+     let mut results: Vec<(I, f32)> = candidates
+         .iter()
+         .filter_map(|(id, orig_score)| {
+             let doc_tokens = doc_map.get(id)?;
+             let doc_refs = crate::as_slices(doc_tokens);
+             let maxsim_score = simd::maxsim(&query_refs, &doc_refs);
+-            let blended = (1.0 - alpha).mul_add(maxsim_score, alpha * orig_score);
++            let blended = (1.0 + /* ~ changed by cargo-mutants ~ */ alpha).mul_add(maxsim_score, alpha * orig_score);
+             Some((id.clone(), blended))
+         })
+         .collect();
+ 
+     crate::sort_scored_desc(&mut results);
+ 
+     if let Some(k) = config.top_k {
+         results.truncate(k);

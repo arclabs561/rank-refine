@@ -1,0 +1,23 @@
+--- src/simd.rs
++++ replace maxsim_cosine_vecs -> f32 with 0.0
+@@ -123,19 +123,17 @@
+     let d = crate::as_slices(doc_tokens);
+     maxsim(&q, &d)
+ }
+ 
+ /// `MaxSim` cosine for owned token vectors (convenience wrapper).
+ #[inline]
+ #[must_use]
+ pub fn maxsim_cosine_vecs(query_tokens: &[Vec<f32>], doc_tokens: &[Vec<f32>]) -> f32 {
+-    let q = crate::as_slices(query_tokens);
+-    let d = crate::as_slices(doc_tokens);
+-    maxsim_cosine(&q, &d)
++    0.0 /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ // ─────────────────────────────────────────────────────────────────────────────
+ // Portable fallback
+ // ─────────────────────────────────────────────────────────────────────────────
+ 
+ /// Portable dot product implementation (reference for SIMD versions).
+ #[inline]

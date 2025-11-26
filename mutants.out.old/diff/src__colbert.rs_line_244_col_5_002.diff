@@ -1,0 +1,42 @@
+--- src/colbert.rs
++++ replace pool_tokens_sequential -> Vec<Vec<f32>> with vec![vec![1.0]]
+@@ -236,38 +236,17 @@
+ }
+ 
+ /// Pool tokens using simple sequential windows.
+ ///
+ /// Faster than clustering but less intelligent. Good for ordered sequences
+ /// where adjacent tokens are likely semantically related.
+ #[must_use]
+ pub fn pool_tokens_sequential(tokens: &[Vec<f32>], window_size: usize) -> Vec<Vec<f32>> {
+-    if tokens.is_empty() || window_size <= 1 {
+-        return tokens.to_vec();
+-    }
+-
+-    tokens
+-        .chunks(window_size)
+-        .map(|chunk| {
+-            let dim = chunk[0].len();
+-            let mut pooled = vec![0.0; dim];
+-            for token in chunk {
+-                for (k, v) in pooled.iter_mut().enumerate() {
+-                    *v += token[k];
+-                }
+-            }
+-            #[allow(clippy::cast_precision_loss)]
+-            let n = chunk.len() as f32;
+-            for v in &mut pooled {
+-                *v /= n;
+-            }
+-            pooled
+-        })
+-        .collect()
++    vec![vec![1.0]] /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// Pool tokens with protected indices (e.g., `[CLS]`, `[D]` markers).
+ ///
+ /// Protected tokens are preserved unchanged and not included in clustering.
+ #[must_use]
+ pub fn pool_tokens_with_protected(
+     tokens: &[Vec<f32>],

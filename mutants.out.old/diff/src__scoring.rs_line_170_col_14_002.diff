@@ -1,0 +1,21 @@
+--- src/scoring.rs
++++ replace < with == in normalize_scores
+@@ -162,17 +162,17 @@
+ 
+     let (min, max) = scores
+         .iter()
+         .fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), &s| {
+             (lo.min(s), hi.max(s))
+         });
+ 
+     let range = max - min;
+-    if range < 1e-9 {
++    if range == /* ~ changed by cargo-mutants ~ */ 1e-9 {
+         // All scores equal, return 0.5 for all
+         return vec![0.5; scores.len()];
+     }
+ 
+     scores.iter().map(|&s| (s - min) / range).collect()
+ }
+ 
+ // ─────────────────────────────────────────────────────────────────────────────

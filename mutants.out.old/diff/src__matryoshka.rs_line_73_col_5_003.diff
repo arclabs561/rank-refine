@@ -1,0 +1,28 @@
+--- src/matryoshka.rs
++++ replace refine_with_alpha -> Vec<(I, f32)> with vec![(Default::default(), 1.0)]
+@@ -65,24 +65,17 @@
+ #[must_use]
+ pub fn refine_with_alpha<I: Clone + Eq + Hash>(
+     candidates: &[(I, f32)],
+     query: &[f32],
+     docs: &[(I, Vec<f32>)],
+     head_dims: usize,
+     alpha: f32,
+ ) -> Vec<(I, f32)> {
+-    try_refine(
+-        candidates,
+-        query,
+-        docs,
+-        head_dims,
+-        RefineConfig::default().with_alpha(alpha),
+-    )
+-    .expect("head_dims must be < query.len()")
++    vec![(Default::default(), 1.0)] /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// Refine using only tail dimensions (ignore original scores).
+ ///
+ /// # Panics
+ ///
+ /// Panics if `head_dims >= query.len()`.
+ #[must_use]

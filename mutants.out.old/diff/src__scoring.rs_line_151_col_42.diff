@@ -1,0 +1,21 @@
+--- src/scoring.rs
++++ replace * with + in blend
+@@ -143,17 +143,17 @@
+ /// Blend two scores with a weight parameter.
+ ///
+ /// `blended = alpha * score_a + (1 - alpha) * score_b`
+ ///
+ /// Uses `mul_add` for better floating-point precision.
+ #[inline]
+ #[must_use]
+ pub fn blend(score_a: f32, score_b: f32, alpha: f32) -> f32 {
+-    (1.0 - alpha).mul_add(score_b, alpha * score_a)
++    (1.0 - alpha).mul_add(score_b, alpha + /* ~ changed by cargo-mutants ~ */ score_a)
+ }
+ 
+ /// Normalize scores to \[0, 1\] range.
+ ///
+ /// Returns original scores if all values are equal (avoids division by zero).
+ #[must_use]
+ pub fn normalize_scores(scores: &[f32]) -> Vec<f32> {
+     if scores.is_empty() {

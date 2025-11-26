@@ -1,0 +1,21 @@
+--- src/colbert.rs
++++ delete ! in pool_tokens_hierarchical
+@@ -174,17 +174,17 @@
+     let mut clusters: Vec<Vec<usize>> = vec![vec![]; num_clusters];
+     for (i, &label) in labels.iter().enumerate() {
+         clusters[label].push(i);
+     }
+ 
+     // Mean pool each cluster
+     clusters
+         .iter()
+-        .filter(|c| !c.is_empty())
++        .filter(|c|  /* ~ changed by cargo-mutants ~ */c.is_empty())
+         .map(|indices| mean_pool(tokens, indices))
+         .collect()
+ }
+ 
+ /// Cut a dendrogram at the level that produces `target_count` clusters.
+ #[cfg(feature = "hierarchical")]
+ fn cut_dendrogram(
+     dendrogram: &kodama::Dendrogram<f64>,

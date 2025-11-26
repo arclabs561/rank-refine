@@ -1,0 +1,21 @@
+--- src/colbert.rs
++++ replace / with * in pool_tokens
+@@ -78,17 +78,17 @@
+ /// * `pool_factor` - Target compression ratio (2 = 50% reduction, 3 = 66%, etc.)
+ #[must_use]
+ pub fn pool_tokens(tokens: &[Vec<f32>], pool_factor: usize) -> Vec<Vec<f32>> {
+     if tokens.is_empty() || pool_factor <= 1 {
+         return tokens.to_vec();
+     }
+ 
+     let n = tokens.len();
+-    let target_count = (n / pool_factor).max(1);
++    let target_count = (n * /* ~ changed by cargo-mutants ~ */ pool_factor).max(1);
+ 
+     if n <= target_count {
+         return tokens.to_vec();
+     }
+ 
+     #[cfg(feature = "hierarchical")]
+     {
+         pool_tokens_hierarchical(tokens, target_count)

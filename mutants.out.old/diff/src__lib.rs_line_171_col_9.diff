@@ -1,0 +1,22 @@
+--- src/lib.rs
++++ replace RefineConfig::with_top_k -> Self with Default::default()
+@@ -163,18 +163,17 @@
+     pub const fn with_alpha(mut self, alpha: f32) -> Self {
+         self.alpha = alpha;
+         self
+     }
+ 
+     /// Limit output to top k.
+     #[must_use]
+     pub const fn with_top_k(mut self, top_k: usize) -> Self {
+-        self.top_k = Some(top_k);
+-        self
++        Default::default() /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// Only use refinement scores (alpha = 0).
+     #[must_use]
+     pub const fn refinement_only() -> Self {
+         Self { alpha: 0.0, top_k: None }
+     }
+ 

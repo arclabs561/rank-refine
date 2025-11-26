@@ -1,0 +1,127 @@
+
+*** src/scoring.rs:49:9: replace Scorer::rank -> Vec<(I, f32)> with vec![(Default::default(), 0.0)]
+
+*** mutation diff:
+--- src/scoring.rs
++++ replace Scorer::rank -> Vec<(I, f32)> with vec![(Default::default(), 0.0)]
+@@ -41,22 +41,17 @@
+ ///
+ /// Implement this for custom similarity functions.
+ pub trait Scorer {
+     /// Score similarity between query and document.
+     fn score(&self, query: &[f32], doc: &[f32]) -> f32;
+ 
+     /// Rank documents by score (descending).
+     fn rank<I: Clone>(&self, query: &[f32], docs: &[(I, &[f32])]) -> Vec<(I, f32)> {
+-        let mut results: Vec<(I, f32)> = docs
+-            .iter()
+-            .map(|(id, doc)| (id.clone(), self.score(query, doc)))
+-            .collect();
+-        crate::sort_scored_desc(&mut results);
+-        results
++        vec![(Default::default(), 0.0)] /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ impl Scorer for DenseScorer {
+     fn score(&self, query: &[f32], doc: &[f32]) -> f32 {
+         DenseScorer::score(self, query, doc)
+     }
+ }
+
+
+*** /opt/homebrew/bin/cargo test --no-run --verbose --package=rank-refine@0.7.9
+       Fresh unicode-ident v1.0.22
+       Fresh cfg-if v1.0.4
+       Fresh autocfg v1.5.0
+       Fresh regex-syntax v0.8.8
+       Fresh bitflags v2.10.0
+       Fresh either v1.15.0
+       Fresh proc-macro2 v1.0.103
+       Fresh once_cell v1.21.3
+       Fresh memchr v2.7.6
+       Fresh itoa v1.0.15
+       Fresh fastrand v2.3.0
+       Fresh plotters-backend v0.3.7
+       Fresh libc v0.2.177
+       Fresh quote v1.0.42
+       Fresh crossbeam-utils v0.8.21
+       Fresh serde_core v1.0.228
+       Fresh ryu v1.0.20
+       Fresh clap_lex v0.7.6
+       Fresh anstyle v1.0.13
+       Fresh ciborium-io v0.2.2
+       Fresh plotters-svg v0.3.7
+       Fresh regex-automata v0.4.13
+       Fresh itertools v0.10.5
+       Fresh fnv v1.0.7
+       Fresh bit-vec v0.8.0
+       Fresh quick-error v1.2.3
+       Fresh same-file v1.0.6
+       Fresh cast v0.3.0
+       Fresh syn v2.0.111
+       Fresh getrandom v0.3.4
+       Fresh crossbeam-epoch v0.9.18
+       Fresh errno v0.3.14
+       Fresh num-traits v0.2.19
+       Fresh clap_builder v4.5.53
+       Fresh serde_json v1.0.145
+       Fresh wait-timeout v0.2.1
+       Fresh is-terminal v0.4.17
+       Fresh criterion-plot v0.5.0
+       Fresh bit-set v0.8.0
+       Fresh regex v1.12.2
+       Fresh walkdir v2.5.0
+       Fresh anes v0.1.6
+       Fresh oorandom v11.1.5
+       Fresh unarray v0.1.4
+       Dirty rank-refine v0.7.9 (/private/var/folders/dt/jq9nqy8x2wd65h22qb9rptjr0000gn/T/cargo-mutants-rank-refine-DHUa65.tmp): the file `src/colbert.rs` has changed (1764195588.077782178s, 8s after last build at 1764195580.744651200s)
+   Compiling rank-refine v0.7.9 (/private/var/folders/dt/jq9nqy8x2wd65h22qb9rptjr0000gn/T/cargo-mutants-rank-refine-DHUa65.tmp)
+       Fresh zerocopy-derive v0.8.30
+       Fresh rand_core v0.9.3
+       Fresh serde_derive v1.0.228
+       Fresh crossbeam-deque v0.8.6
+       Fresh rustix v1.1.2
+       Fresh clap v4.5.53
+       Fresh plotters v0.3.7
+       Fresh zerocopy v0.8.30
+       Fresh serde v1.0.228
+       Fresh rayon-core v1.13.0
+       Fresh tempfile v3.23.0
+       Fresh rand v0.9.2
+       Fresh rand_xorshift v0.4.0
+     Running `rustc --crate-name rank_refine --edition=2021 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 -C split-debuginfo=unpacked --cfg 'feature="default"' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("default", "hierarchical", "kodama"))' -C metadata=a9145a0b8e512428 -C extra-filename=-a97128c91e1742ac --out-dir /private/var/folders/dt/jq9nqy8x2wd65h22qb9rptjr0000gn/T/cargo-mutants-rank-refine-DHUa65.tmp/target/debug/deps -C incremental=/private/var/folders/dt/jq9nqy8x2wd65h22qb9rptjr0000gn/T/cargo-mutants-rank-refine-DHUa65.tmp/target/debug/incremental -L dependency=/private/var/folders/dt/jq9nqy8x2wd65h22qb9rptjr0000gn/T/cargo-mutants-rank-refine-DHUa65.tmp/target/debug/deps`
+       Fresh half v2.7.1
+       Fresh ppv-lite86 v0.2.21
+       Fresh tinytemplate v1.2.1
+       Fresh rusty-fork v0.3.1
+       Fresh rayon v1.11.0
+       Fresh ciborium-ll v0.2.2
+       Fresh rand_chacha v0.9.0
+       Fresh ciborium v0.2.2
+       Fresh proptest v1.9.0
+       Fresh criterion v0.5.1
+     Running `rustc --crate-name rank_refine --edition=2021 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 -C split-debuginfo=unpacked --test --cfg 'feature="default"' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("default", "hierarchical", "kodama"))' -C metadata=d60e10c1e4de765d -C extra-filename=-66be09a2c0c6ed5c --out-dir /private/var/folders/dt/jq9nqy8x2wd65h22qb9rptjr0000gn/T/cargo-mutants-rank-refine-DHUa65.tmp/target/debug/deps -C incremental=/private/var/folders/dt/jq9nqy8x2wd65h22qb9rptjr0000gn/T/cargo-mutants-rank-refine-DHUa65.tmp/target/debug/incremental -L dependency=/private/var/folders/dt/jq9nqy8x2wd65h22qb9rptjr0000gn/T/cargo-mutants-rank-refine-DHUa65.tmp/target/debug/deps --extern criterion=/private/var/folders/dt/jq9nqy8x2wd65h22qb9rptjr0000gn/T/cargo-mutants-rank-refine-DHUa65.tmp/target/debug/deps/libcriterion-a8d57b2e80b47536.rlib --extern proptest=/private/var/folders/dt/jq9nqy8x2wd65h22qb9rptjr0000gn/T/cargo-mutants-rank-refine-DHUa65.tmp/target/debug/deps/libproptest-0cbeba200425c4c9.rlib`
+error[E0277]: the trait bound `I: Default` is not satisfied
+  --> src/scoring.rs:49:15
+   |
+49 |         vec![(Default::default(), 0.0)] /* ~ changed by cargo-mutants ~ */
+   |               ^^^^^^^^^^^^^^^^^^ the trait `Default` is not implemented for `I`
+   |
+help: consider further restricting type parameter `I` with trait `Default`
+   |
+48 |     fn rank<I: Clone + std::default::Default>(&self, query: &[f32], docs: &[(I, &[f32])]) -> Vec<(I, f32)> {
+   |                      +++++++++++++++++++++++
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `rank-refine` (lib) due to 1 previous error
+
+Caused by:
+  process didn't exit successfully: `rustc --crate-name rank_refine --edition=2021 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 -C split-debuginfo=unpacked --cfg 'feature="default"' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("default", "hierarchical", "kodama"))' -C metadata=a9145a0b8e512428 -C extra-filename=-a97128c91e1742ac --out-dir /private/var/folders/dt/jq9nqy8x2wd65h22qb9rptjr0000gn/T/cargo-mutants-rank-refine-DHUa65.tmp/target/debug/deps -C incremental=/private/var/folders/dt/jq9nqy8x2wd65h22qb9rptjr0000gn/T/cargo-mutants-rank-refine-DHUa65.tmp/target/debug/incremental -L dependency=/private/var/folders/dt/jq9nqy8x2wd65h22qb9rptjr0000gn/T/cargo-mutants-rank-refine-DHUa65.tmp/target/debug/deps` (exit status: 1)
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `rank-refine` (lib test) due to 1 previous error
+
+Caused by:
+  process didn't exit successfully: `rustc --crate-name rank_refine --edition=2021 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 -C split-debuginfo=unpacked --test --cfg 'feature="default"' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("default", "hierarchical", "kodama"))' -C metadata=d60e10c1e4de765d -C extra-filename=-66be09a2c0c6ed5c --out-dir /private/var/folders/dt/jq9nqy8x2wd65h22qb9rptjr0000gn/T/cargo-mutants-rank-refine-DHUa65.tmp/target/debug/deps -C incremental=/private/var/folders/dt/jq9nqy8x2wd65h22qb9rptjr0000gn/T/cargo-mutants-rank-refine-DHUa65.tmp/target/debug/incremental -L dependency=/private/var/folders/dt/jq9nqy8x2wd65h22qb9rptjr0000gn/T/cargo-mutants-rank-refine-DHUa65.tmp/target/debug/deps --extern criterion=/private/var/folders/dt/jq9nqy8x2wd65h22qb9rptjr0000gn/T/cargo-mutants-rank-refine-DHUa65.tmp/target/debug/deps/libcriterion-a8d57b2e80b47536.rlib --extern proptest=/private/var/folders/dt/jq9nqy8x2wd65h22qb9rptjr0000gn/T/cargo-mutants-rank-refine-DHUa65.tmp/target/debug/deps/libproptest-0cbeba200425c4c9.rlib` (exit status: 1)
+
+*** result: Failure(101)

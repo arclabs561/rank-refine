@@ -1,0 +1,21 @@
+--- src/crossencoder.rs
++++ replace - with / in refine
+@@ -82,17 +82,17 @@
+     let range = (max_ce - min_ce).max(1e-9);
+ 
+     let mut results: Vec<(I, Score)> = candidates
+         .iter()
+         .zip(ce_scores)
+         .map(|((id, _, orig), ce)| {
+             let ce_norm = (ce - min_ce) / range;
+             // Use mul_add for better precision
+-            let blended = (1.0 - alpha).mul_add(ce_norm, alpha * orig);
++            let blended = (1.0 / /* ~ changed by cargo-mutants ~ */ alpha).mul_add(ce_norm, alpha * orig);
+             (id.clone(), blended)
+         })
+         .collect();
+ 
+     crate::sort_scored_desc(&mut results);
+     results
+ }
+ 

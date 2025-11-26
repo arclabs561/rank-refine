@@ -1,0 +1,30 @@
+--- src/lib.rs
++++ replace <impl std::fmt::Display for RefineError>::fmt -> std::fmt::Result with Ok(Default::default())
+@@ -82,26 +82,17 @@
+     /// Cannot score an empty query.
+     EmptyQuery,
+     /// Vector dimensions must match.
+     DimensionMismatch { expected: usize, got: usize },
+ }
+ 
+ impl std::fmt::Display for RefineError {
+     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+-        match self {
+-            Self::InvalidHeadDims { head_dims, query_len } => write!(
+-                f,
+-                "invalid head_dims: {head_dims} >= query length {query_len}"
+-            ),
+-            Self::EmptyQuery => write!(f, "empty query"),
+-            Self::DimensionMismatch { expected, got } => {
+-                write!(f, "expected {expected} dimensions, got {got}")
+-            }
+-        }
++        Ok(Default::default()) /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ impl std::error::Error for RefineError {}
+ 
+ /// Result type for refinement operations.
+ pub type Result<T> = std::result::Result<T, RefineError>;
+ 

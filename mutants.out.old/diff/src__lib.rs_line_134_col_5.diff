@@ -1,0 +1,21 @@
+--- src/lib.rs
++++ replace sort_scored_desc with ()
+@@ -126,17 +126,17 @@
+ // Sorting Utilities
+ // ─────────────────────────────────────────────────────────────────────────────
+ 
+ /// Sort scored results in descending order (highest score first).
+ ///
+ /// Uses `f32::total_cmp` for deterministic ordering of NaN values.
+ #[inline]
+ pub(crate) fn sort_scored_desc<T>(results: &mut [(T, f32)]) {
+-    results.sort_by(|a, b| b.1.total_cmp(&a.1));
++    () /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// Configuration for score blending and truncation.
+ ///
+ /// ```rust
+ /// use rank_refine::RefineConfig;
+ ///
+ /// let config = RefineConfig::default()

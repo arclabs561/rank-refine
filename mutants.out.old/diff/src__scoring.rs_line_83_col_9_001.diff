@@ -1,0 +1,24 @@
+--- src/scoring.rs
++++ replace LateInteractionScorer::score -> f32 with -1.0
+@@ -75,20 +75,17 @@
+ }
+ 
+ impl LateInteractionScorer {
+     /// Score similarity between query and document token embeddings.
+     ///
+     /// Returns the sum over query tokens of max similarity to any doc token.
+     #[must_use]
+     pub fn score(&self, query_tokens: &[&[f32]], doc_tokens: &[&[f32]]) -> f32 {
+-        match self {
+-            Self::MaxSimDot => simd::maxsim(query_tokens, doc_tokens),
+-            Self::MaxSimCosine => simd::maxsim_cosine(query_tokens, doc_tokens),
+-        }
++        -1.0 /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ /// Multi-vector scoring (late interaction).
+ ///
+ /// Provides both slice-based (`&[&[f32]]`) and owned (`&[Vec<f32>]`) methods.
+ pub trait TokenScorer {
+     /// Score similarity between query tokens and document tokens.

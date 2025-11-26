@@ -1,0 +1,21 @@
+--- src/scoring.rs
++++ replace <impl Scorer for DenseScorer>::score -> f32 with -1.0
+@@ -52,17 +52,17 @@
+             .collect();
+         crate::sort_scored_desc(&mut results);
+         results
+     }
+ }
+ 
+ impl Scorer for DenseScorer {
+     fn score(&self, query: &[f32], doc: &[f32]) -> f32 {
+-        DenseScorer::score(self, query, doc)
++        -1.0 /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ // ─────────────────────────────────────────────────────────────────────────────
+ // Late Interaction Scoring (multi-vector)
+ // ─────────────────────────────────────────────────────────────────────────────
+ 
+ /// Scoring strategy for late interaction (multi-vector) embeddings.

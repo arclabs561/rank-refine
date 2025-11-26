@@ -106,7 +106,10 @@ pub enum RefineError {
 impl std::fmt::Display for RefineError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::InvalidHeadDims { head_dims, query_len } => write!(
+            Self::InvalidHeadDims {
+                head_dims,
+                query_len,
+            } => write!(
                 f,
                 "invalid head_dims: {head_dims} >= query length {query_len}"
             ),
@@ -171,7 +174,10 @@ pub struct RefineConfig {
 
 impl Default for RefineConfig {
     fn default() -> Self {
-        Self { alpha: 0.5, top_k: None }
+        Self {
+            alpha: 0.5,
+            top_k: None,
+        }
     }
 }
 
@@ -193,12 +199,18 @@ impl RefineConfig {
     /// Only use refinement scores (alpha = 0).
     #[must_use]
     pub const fn refinement_only() -> Self {
-        Self { alpha: 0.0, top_k: None }
+        Self {
+            alpha: 0.0,
+            top_k: None,
+        }
     }
 
     /// Only use original scores (alpha = 1).
     #[must_use]
     pub const fn original_only() -> Self {
-        Self { alpha: 1.0, top_k: None }
+        Self {
+            alpha: 1.0,
+            top_k: None,
+        }
     }
 }

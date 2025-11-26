@@ -1,0 +1,21 @@
+--- src/lib.rs
++++ replace as_slices -> Vec<&[f32]> with vec![]
+@@ -114,17 +114,17 @@
+ ///
+ /// let tokens = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+ /// let refs = as_slices(&tokens);
+ /// let score = simd::maxsim(&refs, &refs);
+ /// ```
+ #[inline]
+ #[must_use]
+ pub fn as_slices(tokens: &[Vec<f32>]) -> Vec<&[f32]> {
+-    tokens.iter().map(Vec::as_slice).collect()
++    vec![] /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ // ─────────────────────────────────────────────────────────────────────────────
+ // Sorting Utilities
+ // ─────────────────────────────────────────────────────────────────────────────
+ 
+ /// Sort scored results in descending order (highest score first).
+ ///

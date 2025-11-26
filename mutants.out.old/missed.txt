@@ -1,0 +1,53 @@
+src/crossencoder.rs:88:41: replace / with * in refine
+src/scoring.rs:170:14: replace < with <= in normalize_scores
+src/colbert.rs:195:5: replace cut_dendrogram -> Vec<usize> with vec![0]
+src/colbert.rs:195:5: replace cut_dendrogram -> Vec<usize> with vec![1]
+src/colbert.rs:161:39: replace - with / in pool_tokens_hierarchical
+src/crossencoder.rs:35:9: replace CrossEncoderModel::score -> Score with Default::default()
+src/colbert.rs:320:26: replace || with && in pool_tokens_adaptive
+src/scoring.rs:232:46: replace >= with < in <impl Pooler for AdaptivePooler>::pool
+src/simd.rs:22:45: replace && with || in dot
+src/colbert.rs:81:26: replace || with && in pool_tokens
+src/crossencoder.rs:82:25: replace - with + in refine
+src/colbert.rs:208:40: replace * with / in cut_dendrogram
+src/colbert.rs:158:46: delete - in pool_tokens_hierarchical
+src/simd.rs:131:5: replace maxsim_cosine_vecs -> f32 with 1.0
+src/colbert.rs:229:24: replace += with *= in cut_dendrogram
+src/crossencoder.rs:82:25: replace - with / in refine
+src/colbert.rs:117:24: replace > with >= in pool_tokens_greedy
+src/colbert.rs:146:5: replace pool_tokens_hierarchical -> Vec<Vec<f32>> with vec![vec![-1.0]]
+src/colbert.rs:208:40: replace * with + in cut_dendrogram
+src/colbert.rs:229:24: replace += with -= in cut_dendrogram
+src/colbert.rs:182:21: delete ! in pool_tokens_hierarchical
+src/colbert.rs:277:41: replace <= with > in pool_tokens_with_protected
+src/colbert.rs:244:26: replace || with && in pool_tokens_sequential
+src/lib.rs:90:9: replace <impl std::fmt::Display for RefineError>::fmt -> std::fmt::Result with Ok(Default::default())
+src/colbert.rs:155:21: replace + with - in pool_tokens_hierarchical
+src/colbert.rs:155:21: replace + with * in pool_tokens_hierarchical
+src/colbert.rs:146:5: replace pool_tokens_hierarchical -> Vec<Vec<f32>> with vec![vec![]]
+src/colbert.rs:173:61: replace + with * in pool_tokens_hierarchical
+src/scoring.rs:191:40: replace <= with > in Pooler::pool_by_factor
+src/colbert.rs:200:25: replace != with == in cut_dendrogram::find
+src/scoring.rs:204:46: replace >= with < in <impl Pooler for SequentialPooler>::pool
+src/scoring.rs:218:46: replace >= with < in <impl Pooler for ClusteringPooler>::pool
+src/colbert.rs:215:29: replace + with - in cut_dendrogram
+src/simd.rs:54:24: replace > with >= in cosine
+src/matryoshka.rs:126:38: replace > with >= in try_refine
+src/colbert.rs:445:69: replace * with + in refine_with_config
+src/colbert.rs:195:5: replace cut_dendrogram -> Vec<usize> with vec![]
+src/simd.rs:54:11: replace > with >= in cosine
+src/colbert.rs:212:21: replace >= with < in cut_dendrogram
+src/colbert.rs:200:9: replace cut_dendrogram::find -> usize with 0
+src/colbert.rs:200:9: replace cut_dendrogram::find -> usize with 1
+src/colbert.rs:146:5: replace pool_tokens_hierarchical -> Vec<Vec<f32>> with vec![vec![1.0]]
+src/colbert.rs:161:39: replace - with + in pool_tokens_hierarchical
+src/colbert.rs:277:26: replace || with && in pool_tokens_with_protected
+src/scoring.rs:194:41: replace / with * in Pooler::pool_by_factor
+src/scoring.rs:232:30: replace || with && in <impl Pooler for AdaptivePooler>::pool
+src/scoring.rs:204:30: replace || with && in <impl Pooler for SequentialPooler>::pool
+src/scoring.rs:191:30: replace || with && in Pooler::pool_by_factor
+src/colbert.rs:146:5: replace pool_tokens_hierarchical -> Vec<Vec<f32>> with vec![vec![0.0]]
+src/scoring.rs:218:30: replace || with && in <impl Pooler for ClusteringPooler>::pool
+src/colbert.rs:146:5: replace pool_tokens_hierarchical -> Vec<Vec<f32>> with vec![]
+src/colbert.rs:173:61: replace + with - in pool_tokens_hierarchical
+src/colbert.rs:215:29: replace + with * in cut_dendrogram

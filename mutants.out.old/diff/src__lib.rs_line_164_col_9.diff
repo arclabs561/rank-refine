@@ -1,0 +1,22 @@
+--- src/lib.rs
++++ replace RefineConfig::with_alpha -> Self with Default::default()
+@@ -156,18 +156,17 @@
+         Self { alpha: 0.5, top_k: None }
+     }
+ }
+ 
+ impl RefineConfig {
+     /// Set blending weight.
+     #[must_use]
+     pub const fn with_alpha(mut self, alpha: f32) -> Self {
+-        self.alpha = alpha;
+-        self
++        Default::default() /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// Limit output to top k.
+     #[must_use]
+     pub const fn with_top_k(mut self, top_k: usize) -> Self {
+         self.top_k = Some(top_k);
+         self
+     }

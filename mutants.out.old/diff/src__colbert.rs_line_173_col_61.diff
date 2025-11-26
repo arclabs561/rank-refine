@@ -1,0 +1,21 @@
+--- src/colbert.rs
++++ replace + with * in pool_tokens_hierarchical
+@@ -165,17 +165,17 @@
+ 
+     // Run Ward's method linkage
+     let dendrogram = linkage(&mut condensed, n, Method::Ward);
+ 
+     // Cut dendrogram to get target_count clusters
+     let labels = cut_dendrogram(&dendrogram, n, target_count);
+ 
+     // Group tokens by cluster label
+-    let num_clusters = labels.iter().max().map_or(0, |&m| m + 1);
++    let num_clusters = labels.iter().max().map_or(0, |&m| m * /* ~ changed by cargo-mutants ~ */ 1);
+     let mut clusters: Vec<Vec<usize>> = vec![vec![]; num_clusters];
+     for (i, &label) in labels.iter().enumerate() {
+         clusters[label].push(i);
+     }
+ 
+     // Mean pool each cluster
+     clusters
+         .iter()

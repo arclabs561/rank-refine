@@ -1,0 +1,21 @@
+--- src/colbert.rs
++++ replace <= with > in pool_tokens
+@@ -80,17 +80,17 @@
+ pub fn pool_tokens(tokens: &[Vec<f32>], pool_factor: usize) -> Vec<Vec<f32>> {
+     if tokens.is_empty() || pool_factor <= 1 {
+         return tokens.to_vec();
+     }
+ 
+     let n = tokens.len();
+     let target_count = (n / pool_factor).max(1);
+ 
+-    if n <= target_count {
++    if n > /* ~ changed by cargo-mutants ~ */ target_count {
+         return tokens.to_vec();
+     }
+ 
+     #[cfg(feature = "hierarchical")]
+     {
+         pool_tokens_hierarchical(tokens, target_count)
+     }
+ 

@@ -1,0 +1,24 @@
+--- src/scoring.rs
++++ replace Pooler::pool_by_factor -> Vec<Vec<f32>> with vec![vec![-1.0]]
+@@ -183,20 +183,17 @@
+ ///
+ /// Invariants: output.len() <= input.len(), dimension preserved, empty in → empty out.
+ pub trait Pooler {
+     /// Pool to approximately `target_count` vectors.
+     fn pool(&self, tokens: &[Vec<f32>], target_count: usize) -> Vec<Vec<f32>>;
+ 
+     /// Pool with compression factor (2 = 50% reduction, 3 = 66%, etc).
+     fn pool_by_factor(&self, tokens: &[Vec<f32>], factor: usize) -> Vec<Vec<f32>> {
+-        if tokens.is_empty() || factor <= 1 {
+-            return tokens.to_vec();
+-        }
+-        self.pool(tokens, (tokens.len() / factor).max(1))
++        vec![vec![-1.0]] /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ /// Sequential window pooling (fastest, position-aware).
+ #[derive(Debug, Clone, Copy, Default)]
+ pub struct SequentialPooler;
+ 
+ impl Pooler for SequentialPooler {

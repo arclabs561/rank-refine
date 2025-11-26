@@ -1,0 +1,23 @@
+--- src/colbert.rs
++++ replace cluster_similarity -> f32 with 0.0
+@@ -327,19 +327,17 @@
+         pool_tokens_sequential(tokens, pool_factor)
+     } else {
+         pool_tokens(tokens, pool_factor)
+     }
+ }
+ 
+ #[cfg(not(feature = "hierarchical"))]
+ fn cluster_similarity(tokens: &[Vec<f32>], c1: &[usize], c2: &[usize]) -> f32 {
+-    let centroid1 = mean_pool(tokens, c1);
+-    let centroid2 = mean_pool(tokens, c2);
+-    simd::cosine(&centroid1, &centroid2)
++    0.0 /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ fn mean_pool(tokens: &[Vec<f32>], indices: &[usize]) -> Vec<f32> {
+     if indices.is_empty() {
+         return vec![];
+     }
+     let dim = tokens[indices[0]].len();
+     let mut pooled = vec![0.0; dim];

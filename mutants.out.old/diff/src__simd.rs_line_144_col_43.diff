@@ -1,0 +1,21 @@
+--- src/simd.rs
++++ replace * with + in dot_portable
+@@ -136,17 +136,17 @@
+ // ─────────────────────────────────────────────────────────────────────────────
+ // Portable fallback
+ // ─────────────────────────────────────────────────────────────────────────────
+ 
+ /// Portable dot product implementation (reference for SIMD versions).
+ #[inline]
+ #[must_use]
+ pub(crate) fn dot_portable(a: &[f32], b: &[f32]) -> f32 {
+-    a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
++    a.iter().zip(b.iter()).map(|(x, y)| x + /* ~ changed by cargo-mutants ~ */ y).sum()
+ }
+ 
+ // ─────────────────────────────────────────────────────────────────────────────
+ // AVX2 + FMA (x86_64)
+ // ─────────────────────────────────────────────────────────────────────────────
+ 
+ #[cfg(target_arch = "x86_64")]
+ #[target_feature(enable = "avx2", enable = "fma")]

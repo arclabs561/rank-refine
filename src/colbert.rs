@@ -708,7 +708,12 @@ mod tests {
     #[test]
     fn pool_greedy_exact_count() {
         // Factor 2 on 4 tokens should give 2
-        let tokens = vec![vec![1.0, 0.0], vec![0.9, 0.1], vec![0.0, 1.0], vec![0.1, 0.9]];
+        let tokens = vec![
+            vec![1.0, 0.0],
+            vec![0.9, 0.1],
+            vec![0.0, 1.0],
+            vec![0.1, 0.9],
+        ];
         let pooled = pool_tokens_greedy(&tokens, 2);
         assert_eq!(pooled.len(), 2);
     }

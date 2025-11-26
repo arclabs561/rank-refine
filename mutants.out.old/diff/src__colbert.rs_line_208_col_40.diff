@@ -1,0 +1,21 @@
+--- src/colbert.rs
++++ replace * with / in cut_dendrogram
+@@ -200,17 +200,17 @@
+         while parent[x] != x {
+             parent[x] = parent[parent[x]]; // path compression
+             x = parent[x];
+         }
+         x
+     }
+ 
+     // Union-find to track cluster membership
+-    let mut parent: Vec<usize> = (0..2 * n).collect();
++    let mut parent: Vec<usize> = (0..2 / /* ~ changed by cargo-mutants ~ */ n).collect();
+ 
+     // Apply merges up to our cut point
+     for (step_idx, step) in dendrogram.steps().iter().enumerate() {
+         if step_idx >= steps_to_take {
+             break;
+         }
+         let new_cluster = n + step_idx;
+         parent[step.cluster1] = new_cluster;

@@ -1,0 +1,59 @@
+--- src/colbert.rs
++++ replace pool_tokens_hierarchical -> Vec<Vec<f32>> with vec![vec![1.0]]
+@@ -138,55 +138,17 @@
+ /// producing more semantically coherent clusters than greedy approaches.
+ ///
+ /// # Panics
+ ///
+ /// Panics if any token has zero norm (would produce NaN cosine similarity).
+ /// kodama requires all dissimilarities to be finite non-NaN values.
+ #[cfg(feature = "hierarchical")]
+ fn pool_tokens_hierarchical(tokens: &[Vec<f32>], target_count: usize) -> Vec<Vec<f32>> {
+-    use kodama::{linkage, Method};
+-
+-    let n = tokens.len();
+-
+-    // Build condensed distance matrix (upper triangular, row-major)
+-    // Distance = 1 - cosine_similarity (so similar tokens have low distance)
+-    // kodama requires all values to be finite non-NaN
+-    let mut condensed = Vec::with_capacity(n * (n - 1) / 2);
+-    for i in 0..n {
+-        for j in (i + 1)..n {
+-            let sim = simd::cosine(&tokens[i], &tokens[j]);
+-            // Handle NaN (from zero-norm vectors) by treating as max distance
+-            let sim_safe = if sim.is_nan() { -1.0 } else { sim };
+-            // Convert similarity to distance, clamped to [0, 2]
+-            #[allow(clippy::cast_lossless)]
+-            let dist = f64::from((1.0 - sim_safe).clamp(0.0, 2.0));
+-            condensed.push(dist);
+-        }
+-    }
+-
+-    // Run Ward's method linkage
+-    let dendrogram = linkage(&mut condensed, n, Method::Ward);
+-
+-    // Cut dendrogram to get target_count clusters
+-    let labels = cut_dendrogram(&dendrogram, n, target_count);
+-
+-    // Group tokens by cluster label
+-    let num_clusters = labels.iter().max().map_or(0, |&m| m + 1);
+-    let mut clusters: Vec<Vec<usize>> = vec![vec![]; num_clusters];
+-    for (i, &label) in labels.iter().enumerate() {
+-        clusters[label].push(i);
+-    }
+-
+-    // Mean pool each cluster
+-    clusters
+-        .iter()
+-        .filter(|c| !c.is_empty())
+-        .map(|indices| mean_pool(tokens, indices))
+-        .collect()
++    vec![vec![1.0]] /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// Cut a dendrogram at the level that produces `target_count` clusters.
+ #[cfg(feature = "hierarchical")]
+ fn cut_dendrogram(
+     dendrogram: &kodama::Dendrogram<f64>,
+     n: usize,
+     target_count: usize,

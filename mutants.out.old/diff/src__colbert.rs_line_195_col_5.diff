@@ -1,0 +1,61 @@
+--- src/colbert.rs
++++ replace cut_dendrogram -> Vec<usize> with vec![0]
+@@ -187,57 +187,17 @@
+ /// Cut a dendrogram at the level that produces `target_count` clusters.
+ #[cfg(feature = "hierarchical")]
+ fn cut_dendrogram(
+     dendrogram: &kodama::Dendrogram<f64>,
+     n: usize,
+     target_count: usize,
+ ) -> Vec<usize> {
+     // Each step merges two clusters, so we need (n - target_count) merges
+-    let steps_to_take = n.saturating_sub(target_count);
+-
+-    // Union-find helper for path compression
+-    #[allow(clippy::items_after_statements)]
+-    fn find(parent: &mut [usize], mut x: usize) -> usize {
+-        while parent[x] != x {
+-            parent[x] = parent[parent[x]]; // path compression
+-            x = parent[x];
+-        }
+-        x
+-    }
+-
+-    // Union-find to track cluster membership
+-    let mut parent: Vec<usize> = (0..2 * n).collect();
+-
+-    // Apply merges up to our cut point
+-    for (step_idx, step) in dendrogram.steps().iter().enumerate() {
+-        if step_idx >= steps_to_take {
+-            break;
+-        }
+-        let new_cluster = n + step_idx;
+-        parent[step.cluster1] = new_cluster;
+-        parent[step.cluster2] = new_cluster;
+-    }
+-
+-    // Assign final labels
+-    let mut label_map = std::collections::HashMap::new();
+-    let mut next_label = 0;
+-    let mut labels = vec![0; n];
+-
+-    for (i, label_slot) in labels.iter_mut().enumerate() {
+-        let root = find(&mut parent, i);
+-        let label = *label_map.entry(root).or_insert_with(|| {
+-            let l = next_label;
+-            next_label += 1;
+-            l
+-        });
+-        *label_slot = label;
+-    }
+-
+-    labels
++    vec![0] /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// Pool tokens using simple sequential windows.
+ ///
+ /// Faster than clustering but less intelligent. Good for ordered sequences
+ /// where adjacent tokens are likely semantically related.
+ #[must_use]
+ pub fn pool_tokens_sequential(tokens: &[Vec<f32>], window_size: usize) -> Vec<Vec<f32>> {
