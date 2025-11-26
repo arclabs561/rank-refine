@@ -101,11 +101,45 @@ fn bench_colbert(c: &mut Criterion) {
     g.finish();
 }
 
+fn bench_pool_tokens(c: &mut Criterion) {
+    let mut g = c.benchmark_group("pool_tokens");
+
+    let dim = 128;
+
+    // Typical document: 64 tokens
+    for &n_tokens in &[32, 64, 128] {
+        let tokens: Vec<Vec<f32>> = (0..n_tokens)
+            .map(|i| random_vec(dim, i as u64))
+            .collect();
+
+        // Pool factor 2 (50% reduction)
+        g.bench_with_input(
+            BenchmarkId::new("greedy_factor2", n_tokens),
+            &tokens,
+            |bench, toks| {
+                bench.iter(|| black_box(colbert::pool_tokens(toks, 2)));
+            },
+        );
+
+        // Sequential pooling (faster alternative)
+        g.bench_with_input(
+            BenchmarkId::new("sequential_window2", n_tokens),
+            &tokens,
+            |bench, toks| {
+                bench.iter(|| black_box(colbert::pool_tokens_sequential(toks, 2)));
+            },
+        );
+    }
+
+    g.finish();
+}
+
 criterion_group!(
     benches,
     bench_simd,
     bench_maxsim,
     bench_matryoshka,
-    bench_colbert
+    bench_colbert,
+    bench_pool_tokens
 );
 criterion_main!(benches);

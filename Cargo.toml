@@ -1,6 +1,6 @@
 [package]
 name = "rank-refine"
-version = "0.5.2"
+version = "0.7.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Fast reranking — Matryoshka, ColBERT MaxSim, Cross-encoder (SIMD-accelerated)"
@@ -11,9 +11,15 @@ readme = "README.md"
 authors = ["Arc <attobop@gmail.com>"]
 
 [dependencies]
+kodama = { version = "0.3", optional = true }
 
 [dev-dependencies]
 criterion = "0.5"
+proptest = "1"
+
+[features]
+default = []
+hierarchical = ["kodama"]
 
 [[bench]]
 name = "refine"

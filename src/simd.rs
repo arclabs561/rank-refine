@@ -1,8 +1,8 @@
 //! Vector operations with SIMD acceleration.
 //!
 //! Provides `dot`, `cosine`, and `maxsim` with automatic SIMD dispatch:
-//! - AVX2+FMA on x86_64 (runtime detection)
-//! - NEON on aarch64
+//! - AVX2+FMA on `x86_64` (runtime detection)
+//! - NEON on `aarch64`
 //! - Portable fallback otherwise
 //!
 //! # Correctness
@@ -15,6 +15,7 @@
 /// If vectors have different lengths, uses the shorter length.
 /// Returns 0.0 for empty vectors.
 #[inline]
+#[must_use]
 pub fn dot(a: &[f32], b: &[f32]) -> f32 {
     #[cfg(target_arch = "x86_64")]
     {
@@ -36,6 +37,7 @@ pub fn dot(a: &[f32], b: &[f32]) -> f32 {
 
 /// L2 norm of a vector.
 #[inline]
+#[must_use]
 pub fn norm(v: &[f32]) -> f32 {
     dot(v, v).sqrt()
 }
@@ -44,6 +46,7 @@ pub fn norm(v: &[f32]) -> f32 {
 ///
 /// Returns 0.0 if either vector has zero norm.
 #[inline]
+#[must_use]
 pub fn cosine(a: &[f32], b: &[f32]) -> f32 {
     let d = dot(a, b);
     let na = norm(a);
@@ -55,16 +58,16 @@ pub fn cosine(a: &[f32], b: &[f32]) -> f32 {
     }
 }
 
-/// MaxSim: sum over query tokens of max dot product with any doc token.
+/// `MaxSim`: sum over query tokens of max dot product with any doc token.
 ///
 /// Used by ColBERT/PLAID for late interaction scoring.
 ///
 /// Returns 0.0 if `query_tokens` is empty.
-/// Returns `NEG_INFINITY` summed for each query token if `doc_tokens` is empty
-/// (this is likely a bug in usage — consider checking inputs).
+/// Returns 0.0 if `doc_tokens` is empty (no matches possible).
 #[inline]
+#[must_use]
 pub fn maxsim(query_tokens: &[&[f32]], doc_tokens: &[&[f32]]) -> f32 {
-    if query_tokens.is_empty() {
+    if query_tokens.is_empty() || doc_tokens.is_empty() {
         return 0.0;
     }
     query_tokens
@@ -78,10 +81,11 @@ pub fn maxsim(query_tokens: &[&[f32]], doc_tokens: &[&[f32]]) -> f32 {
         .sum()
 }
 
-/// MaxSim with cosine similarity instead of dot product.
+/// `MaxSim` with cosine similarity instead of dot product.
 #[inline]
+#[must_use]
 pub fn maxsim_cosine(query_tokens: &[&[f32]], doc_tokens: &[&[f32]]) -> f32 {
-    if query_tokens.is_empty() {
+    if query_tokens.is_empty() || doc_tokens.is_empty() {
         return 0.0;
     }
     query_tokens
@@ -99,11 +103,10 @@ pub fn maxsim_cosine(query_tokens: &[&[f32]], doc_tokens: &[&[f32]]) -> f32 {
 // Portable fallback
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Portable dot product implementation.
-///
-/// This is the reference implementation that SIMD versions must match.
+/// Portable dot product implementation (reference for SIMD versions).
 #[inline]
-pub fn dot_portable(a: &[f32], b: &[f32]) -> f32 {
+#[must_use]
+pub(crate) fn dot_portable(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
 }
 
@@ -114,7 +117,10 @@ pub fn dot_portable(a: &[f32], b: &[f32]) -> f32 {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2", enable = "fma")]
 unsafe fn dot_avx2(a: &[f32], b: &[f32]) -> f32 {
-    use std::arch::x86_64::*;
+    use std::arch::x86_64::{
+        __m256, _mm256_castps256_ps128, _mm256_extractf128_ps, _mm256_fmadd_ps, _mm256_loadu_ps,
+        _mm256_setzero_ps, _mm_add_ps, _mm_add_ss, _mm_cvtss_f32, _mm_movehl_ps, _mm_shuffle_ps,
+    };
 
     let n = a.len().min(b.len());
     if n == 0 {
@@ -124,7 +130,7 @@ unsafe fn dot_avx2(a: &[f32], b: &[f32]) -> f32 {
     let chunks = n / 8;
     let remainder = n % 8;
 
-    let mut sum = _mm256_setzero_ps();
+    let mut sum: __m256 = _mm256_setzero_ps();
 
     let a_ptr = a.as_ptr();
     let b_ptr = b.as_ptr();
@@ -163,7 +169,7 @@ unsafe fn dot_avx2(a: &[f32], b: &[f32]) -> f32 {
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 unsafe fn dot_neon(a: &[f32], b: &[f32]) -> f32 {
-    use std::arch::aarch64::*;
+    use std::arch::aarch64::{float32x4_t, vaddvq_f32, vdupq_n_f32, vfmaq_f32, vld1q_f32};
 
     let n = a.len().min(b.len());
     if n == 0 {
@@ -173,7 +179,7 @@ unsafe fn dot_neon(a: &[f32], b: &[f32]) -> f32 {
     let chunks = n / 4;
     let remainder = n % 4;
 
-    let mut sum = vdupq_n_f32(0.0);
+    let mut sum: float32x4_t = vdupq_n_f32(0.0);
 
     let a_ptr = a.as_ptr();
     let b_ptr = b.as_ptr();
@@ -228,19 +234,22 @@ mod tests {
     #[test]
     fn test_dot_simd_vs_portable() {
         // Test various lengths around SIMD boundaries
-        for len in [0, 1, 3, 4, 5, 7, 8, 9, 15, 16, 17, 31, 32, 33, 100, 256] {
+        for len in [0, 1, 3, 4, 5, 7, 8, 9, 15, 16, 17, 31, 32, 33, 100, 256, 1024] {
             let a: Vec<f32> = (0..len).map(|i| (i as f32) * 0.1).collect();
             let b: Vec<f32> = (0..len).map(|i| (i as f32) * 0.2 + 1.0).collect();
 
             let portable = dot_portable(&a, &b);
             let simd = dot(&a, &b);
 
+            // Use relative tolerance for larger values
+            let tolerance = (portable.abs() * 1e-5).max(1e-5);
             assert!(
-                (portable - simd).abs() < 1e-3,
-                "Mismatch at len={}: portable={}, simd={}",
+                (portable - simd).abs() < tolerance,
+                "Mismatch at len={}: portable={}, simd={}, diff={}",
                 len,
                 portable,
-                simd
+                simd,
+                (portable - simd).abs()
             );
         }
     }
@@ -282,8 +291,8 @@ mod tests {
     fn test_maxsim_empty_doc() {
         let q1 = [1.0, 0.0];
         let query: Vec<&[f32]> = vec![&q1];
-        // With empty docs, each query token contributes NEG_INFINITY
-        assert!(maxsim(&query, &[]).is_infinite() && maxsim(&query, &[]).is_sign_negative());
+        // With empty docs, returns 0.0 (no matches possible)
+        assert_eq!(maxsim(&query, &[]), 0.0);
     }
 
     #[test]
@@ -297,5 +306,100 @@ mod tests {
 
         // q1's best cosine match is d1 (cosine=1.0)
         assert!((maxsim_cosine(&query, &doc) - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_maxsim_cosine_empty_doc() {
+        let q1 = [1.0, 0.0];
+        let query: Vec<&[f32]> = vec![&q1];
+        assert_eq!(maxsim_cosine(&query, &[]), 0.0);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Property Tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    fn arb_vec(len: usize) -> impl Strategy<Value = Vec<f32>> {
+        proptest::collection::vec(-10.0f32..10.0, len)
+    }
+
+    proptest! {
+        /// SIMD dot matches portable implementation
+        #[test]
+        fn dot_simd_matches_portable(a in arb_vec(128), b in arb_vec(128)) {
+            let simd_result = dot(&a, &b);
+            let portable_result = dot_portable(&a, &b);
+            prop_assert!(
+                (simd_result - portable_result).abs() < 1e-3,
+                "SIMD {} != portable {}",
+                simd_result,
+                portable_result
+            );
+        }
+
+        /// Dot product is commutative: dot(a, b) == dot(b, a)
+        #[test]
+        fn dot_commutative(a in arb_vec(64), b in arb_vec(64)) {
+            let ab = dot(&a, &b);
+            let ba = dot(&b, &a);
+            prop_assert!((ab - ba).abs() < 1e-5);
+        }
+
+        /// Cosine similarity is in [-1, 1] for non-zero vectors
+        #[test]
+        fn cosine_bounded(
+            a in arb_vec(32).prop_filter("non-zero", |v| v.iter().any(|x| x.abs() > 1e-6)),
+            b in arb_vec(32).prop_filter("non-zero", |v| v.iter().any(|x| x.abs() > 1e-6))
+        ) {
+            let c = cosine(&a, &b);
+            prop_assert!(c >= -1.0 - 1e-5 && c <= 1.0 + 1e-5, "cosine {} out of bounds", c);
+        }
+
+        /// Cosine similarity is commutative
+        #[test]
+        fn cosine_commutative(a in arb_vec(32), b in arb_vec(32)) {
+            let ab = cosine(&a, &b);
+            let ba = cosine(&b, &a);
+            prop_assert!((ab - ba).abs() < 1e-5);
+        }
+
+        /// MaxSim is non-negative when all dot products are non-negative
+        #[test]
+        fn maxsim_nonnegative_inputs(
+            q_data in proptest::collection::vec(arb_vec(16), 1..5),
+            d_data in proptest::collection::vec(arb_vec(16), 1..5)
+        ) {
+            // Make all vectors have non-negative components
+            let q_pos: Vec<Vec<f32>> = q_data.iter()
+                .map(|v| v.iter().map(|x| x.abs()).collect())
+                .collect();
+            let d_pos: Vec<Vec<f32>> = d_data.iter()
+                .map(|v| v.iter().map(|x| x.abs()).collect())
+                .collect();
+
+            let q_refs: Vec<&[f32]> = q_pos.iter().map(|v| v.as_slice()).collect();
+            let d_refs: Vec<&[f32]> = d_pos.iter().map(|v| v.as_slice()).collect();
+
+            let score = maxsim(&q_refs, &d_refs);
+            prop_assert!(score >= 0.0, "maxsim {} should be non-negative", score);
+        }
+
+        /// Empty inputs return 0
+        #[test]
+        fn maxsim_empty_returns_zero(q_data in proptest::collection::vec(arb_vec(8), 0..3)) {
+            let q_refs: Vec<&[f32]> = q_data.iter().map(|v| v.as_slice()).collect();
+            let empty: Vec<&[f32]> = vec![];
+
+            // Empty query always returns 0
+            prop_assert_eq!(maxsim(&empty, &q_refs), 0.0);
+            // Empty doc always returns 0
+            prop_assert_eq!(maxsim(&q_refs, &empty), 0.0);
+        }
     }
 }
