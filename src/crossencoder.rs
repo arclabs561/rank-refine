@@ -1,12 +1,6 @@
-//! Cross-encoder reranking.
+//! Cross-encoder reranking (O(n) inference).
 //!
-//! Cross-encoders score query-document pairs directly with a transformer,
-//! providing high precision at the cost of O(n) inference calls.
-//!
-//! ## Usage
-//!
-//! This module provides a trait-based API. Implement [`CrossEncoderModel`] for
-//! your inference backend (e.g., candle, ort, tch).
+//! Implement [`CrossEncoderModel`] for your inference backend:
 //!
 //! ```rust
 //! use rank_refine::crossencoder::{CrossEncoderModel, rerank};
@@ -15,15 +9,13 @@
 //!
 //! impl CrossEncoderModel for MyModel {
 //!     fn score_batch(&self, query: &str, documents: &[&str]) -> Vec<f32> {
-//!         // Your inference code here
 //!         documents.iter().map(|d| d.len() as f32 / 100.0).collect()
 //!     }
 //! }
 //!
 //! let model = MyModel;
-//! let candidates = vec![("doc1", "short"), ("doc2", "longer text here")];
+//! let candidates = vec![("doc1", "short"), ("doc2", "longer text")];
 //! let ranked = rerank(&model, "query", &candidates);
-//! assert_eq!(ranked[0].0, "doc2"); // longer doc scores higher
 //! ```
 
 /// A query-document pair score.
@@ -44,17 +36,7 @@ pub trait CrossEncoderModel {
     }
 }
 
-/// Rerank candidates using a cross-encoder.
-///
-/// # Arguments
-///
-/// * `model` - Cross-encoder model
-/// * `query` - Query string
-/// * `candidates` - Document id and text pairs
-///
-/// # Returns
-///
-/// Candidates sorted by descending cross-encoder score.
+/// Rerank candidates by cross-encoder score (descending).
 #[must_use]
 pub fn rerank<I: Clone, M: CrossEncoderModel>(
     model: &M,
@@ -74,16 +56,9 @@ pub fn rerank<I: Clone, M: CrossEncoderModel>(
     results
 }
 
-/// Blend cross-encoder scores with original retrieval scores.
+/// Blend cross-encoder scores with original scores.
 ///
-/// Cross-encoder scores are normalized to [0, 1] before blending.
-///
-/// # Arguments
-///
-/// * `model` - Cross-encoder model
-/// * `query` - Query string
-/// * `candidates` - Tuples of (id, text, original score)
-/// * `alpha` - Weight for original score (0.0 = all CE, 1.0 = all original)
+/// CE scores normalized to [0,1]. `alpha`: 0 = all CE, 1 = all original.
 #[must_use]
 pub fn refine<I: Clone, M: CrossEncoderModel>(
     model: &M,

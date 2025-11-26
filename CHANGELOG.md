@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.7.8] - 2025-11-26
+
+### Changed
+- Shorter `crossencoder` module and function docs
+- Removed redundant `# Arguments` sections
+
 ## [0.7.7] - 2025-11-26
 
 ### Changed
