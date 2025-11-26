@@ -22,19 +22,33 @@ You bring embeddings from your preferred source:
 ## Quick Start
 
 ```rust
-use rank_refine::{simd, colbert, scoring::DenseScorer};
+use rank_refine::prelude::*;
 
 // 1. Get embeddings from your model (fastembed, candle, etc.)
 let query_emb: Vec<f32> = /* your_model.embed("query") */;
 let doc_embs: Vec<Vec<f32>> = /* your_model.embed_batch(docs) */;
 
 // 2. Score with rank-refine
-let score = simd::cosine(&query_emb, &doc_embs[0]);
+let score = cosine(&query_emb, &doc_embs[0]);
 
 // For ColBERT token embeddings:
 let query_tokens: Vec<Vec<f32>> = /* colbert_model.encode_query("query") */;
 let doc_tokens: Vec<Vec<f32>> = /* colbert_model.encode_doc("doc") */;
-let maxsim = simd::maxsim_vecs(&query_tokens, &doc_tokens);
+let maxsim = maxsim_vecs(&query_tokens, &doc_tokens);
+```
+
+## Prelude
+
+Import common types with one line:
+
+```rust
+use rank_refine::prelude::*;
+// Traits: DenseScorer, LateInteractionScorer, Pooler, Scorer, TokenScorer
+// SIMD: cosine, dot, maxsim, maxsim_cosine, maxsim_vecs, norm
+// Matryoshka: mrl_refine, mrl_try_refine, RefineConfig
+// ColBERT: pool_tokens, colbert_rank
+// Cross-encoder: CrossEncoderModel
+// Utilities: as_slices, RefineError
 ```
 
 ## End-to-End Example with fastembed
