@@ -26,24 +26,24 @@ pub mod simd;
 #[derive(Debug, Clone, PartialEq)]
 pub enum RefineError {
     /// Head dimensions >= query length (no tail to refine with).
-    InvalidHeadDims {
-        head_dims: usize,
-        query_len: usize,
-    },
+    InvalidHeadDims { head_dims: usize, query_len: usize },
     /// Empty query (cannot compute similarity).
     EmptyQuery,
     /// Dimension mismatch between query and document.
-    DimensionMismatch {
-        expected: usize,
-        got: usize,
-    },
+    DimensionMismatch { expected: usize, got: usize },
 }
 
 impl std::fmt::Display for RefineError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::InvalidHeadDims { head_dims, query_len } => {
-                write!(f, "head_dims ({head_dims}) must be < query.len() ({query_len})")
+            Self::InvalidHeadDims {
+                head_dims,
+                query_len,
+            } => {
+                write!(
+                    f,
+                    "head_dims ({head_dims}) must be < query.len() ({query_len})"
+                )
             }
             Self::EmptyQuery => write!(f, "query is empty"),
             Self::DimensionMismatch { expected, got } => {

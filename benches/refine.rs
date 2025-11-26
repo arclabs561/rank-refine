@@ -108,9 +108,7 @@ fn bench_pool_tokens(c: &mut Criterion) {
 
     // Typical document: 64 tokens
     for &n_tokens in &[32, 64, 128] {
-        let tokens: Vec<Vec<f32>> = (0..n_tokens)
-            .map(|i| random_vec(dim, i as u64))
-            .collect();
+        let tokens: Vec<Vec<f32>> = (0..n_tokens).map(|i| random_vec(dim, i as u64)).collect();
 
         // Pool factor 2 (50% reduction)
         g.bench_with_input(

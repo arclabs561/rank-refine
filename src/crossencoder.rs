@@ -198,10 +198,7 @@ mod tests {
     #[test]
     fn test_nan_score_handling() {
         let model = MockEncoder;
-        let candidates = vec![
-            ("d1", "text", f32::NAN),
-            ("d2", "text", 0.5),
-        ];
+        let candidates = vec![("d1", "text", f32::NAN), ("d2", "text", 0.5)];
 
         // Should not panic; total_cmp puts NaN > all numbers, so NaN comes first in descending sort
         let refined = refine(&model, "query", &candidates, 0.5);

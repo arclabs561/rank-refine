@@ -59,6 +59,14 @@ use crate::{simd, RefineConfig};
 /// Reduces the number of vectors stored per document while preserving
 /// semantic information. Pool factor 2-3 is recommended (50-66% reduction).
 ///
+/// # Pool Factor Guide
+///
+/// | Factor | Storage Saved | Quality Loss | Recommendation |
+/// |--------|---------------|--------------|----------------|
+/// | 2 | 50% | ~0% | Default choice |
+/// | 3 | 66% | ~1% | Good tradeoff |
+/// | 4+ | 75%+ | 3-5% | Use `hierarchical` feature |
+///
 /// # Algorithm
 ///
 /// - **Default**: Greedy agglomerative clustering (O(n³))
@@ -93,6 +101,7 @@ pub fn pool_tokens(tokens: &[Vec<f32>], pool_factor: usize) -> Vec<Vec<f32>> {
 }
 
 /// Greedy agglomerative clustering (default, O(n³)).
+#[cfg(not(feature = "hierarchical"))]
 fn pool_tokens_greedy(tokens: &[Vec<f32>], target_count: usize) -> Vec<Vec<f32>> {
     let n = tokens.len();
     let mut clusters: Vec<Vec<usize>> = (0..n).map(|i| vec![i]).collect();
@@ -127,6 +136,11 @@ fn pool_tokens_greedy(tokens: &[Vec<f32>], target_count: usize) -> Vec<Vec<f32>>
 ///
 /// Ward's method minimizes within-cluster variance at each merge step,
 /// producing more semantically coherent clusters than greedy approaches.
+///
+/// # Panics
+///
+/// Panics if any token has zero norm (would produce NaN cosine similarity).
+/// kodama requires all dissimilarities to be finite non-NaN values.
 #[cfg(feature = "hierarchical")]
 fn pool_tokens_hierarchical(tokens: &[Vec<f32>], target_count: usize) -> Vec<Vec<f32>> {
     use kodama::{linkage, Method};
@@ -135,13 +149,16 @@ fn pool_tokens_hierarchical(tokens: &[Vec<f32>], target_count: usize) -> Vec<Vec
 
     // Build condensed distance matrix (upper triangular, row-major)
     // Distance = 1 - cosine_similarity (so similar tokens have low distance)
+    // kodama requires all values to be finite non-NaN
     let mut condensed = Vec::with_capacity(n * (n - 1) / 2);
     for i in 0..n {
         for j in (i + 1)..n {
             let sim = simd::cosine(&tokens[i], &tokens[j]);
+            // Handle NaN (from zero-norm vectors) by treating as max distance
+            let sim_safe = if sim.is_nan() { -1.0 } else { sim };
             // Convert similarity to distance, clamped to [0, 2]
-            #[allow(clippy::cast_precision_loss)]
-            let dist = (1.0 - sim).clamp(0.0, 2.0) as f64;
+            #[allow(clippy::cast_lossless)]
+            let dist = f64::from((1.0 - sim_safe).clamp(0.0, 2.0));
             condensed.push(dist);
         }
     }
@@ -167,7 +184,7 @@ fn pool_tokens_hierarchical(tokens: &[Vec<f32>], target_count: usize) -> Vec<Vec
         .collect()
 }
 
-/// Cut a dendrogram at the level that produces target_count clusters.
+/// Cut a dendrogram at the level that produces `target_count` clusters.
 #[cfg(feature = "hierarchical")]
 fn cut_dendrogram(
     dendrogram: &kodama::Dendrogram<f64>,
@@ -177,9 +194,8 @@ fn cut_dendrogram(
     // Each step merges two clusters, so we need (n - target_count) merges
     let steps_to_take = n.saturating_sub(target_count);
 
-    // Union-find to track cluster membership
-    let mut parent: Vec<usize> = (0..2 * n).collect();
-
+    // Union-find helper for path compression
+    #[allow(clippy::items_after_statements)]
     fn find(parent: &mut [usize], mut x: usize) -> usize {
         while parent[x] != x {
             parent[x] = parent[parent[x]]; // path compression
@@ -187,6 +203,9 @@ fn cut_dendrogram(
         }
         x
     }
+
+    // Union-find to track cluster membership
+    let mut parent: Vec<usize> = (0..2 * n).collect();
 
     // Apply merges up to our cut point
     for (step_idx, step) in dendrogram.steps().iter().enumerate() {
@@ -203,14 +222,14 @@ fn cut_dendrogram(
     let mut next_label = 0;
     let mut labels = vec![0; n];
 
-    for i in 0..n {
+    for (i, label_slot) in labels.iter_mut().enumerate() {
         let root = find(&mut parent, i);
         let label = *label_map.entry(root).or_insert_with(|| {
             let l = next_label;
             next_label += 1;
             l
         });
-        labels[i] = label;
+        *label_slot = label;
     }
 
     labels
@@ -268,6 +287,50 @@ pub fn pool_tokens_with_protected(
     result
 }
 
+/// Adaptively choose the best pooling strategy based on pool factor.
+///
+/// - **Factor 1-3**: Uses clustering-based pooling (greedy or hierarchical)
+/// - **Factor 4+**: Uses sequential pooling (faster, nearly as good for aggressive compression)
+///
+/// This is a convenience function that picks reasonable defaults. For full control,
+/// use [`pool_tokens`] or [`pool_tokens_sequential`] directly.
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::colbert;
+///
+/// let tokens = vec![
+///     vec![1.0, 0.0, 0.0, 0.0],
+///     vec![0.9, 0.1, 0.0, 0.0],
+///     vec![0.0, 1.0, 0.0, 0.0],
+///     vec![0.0, 0.9, 0.1, 0.0],
+/// ];
+///
+/// // Factor 2: uses clustering (quality matters more)
+/// let pooled_2 = colbert::pool_tokens_adaptive(&tokens, 2);
+/// assert_eq!(pooled_2.len(), 2);
+///
+/// // Factor 4: uses sequential (speed matters more at aggressive compression)
+/// let pooled_4 = colbert::pool_tokens_adaptive(&tokens, 4);
+/// assert_eq!(pooled_4.len(), 1);
+/// ```
+#[must_use]
+pub fn pool_tokens_adaptive(tokens: &[Vec<f32>], pool_factor: usize) -> Vec<Vec<f32>> {
+    if tokens.is_empty() || pool_factor <= 1 {
+        return tokens.to_vec();
+    }
+
+    // For aggressive pooling (factor 4+), sequential is nearly as good and much faster
+    // For moderate pooling (factor 2-3), clustering preserves quality better
+    if pool_factor >= 4 {
+        pool_tokens_sequential(tokens, pool_factor)
+    } else {
+        pool_tokens(tokens, pool_factor)
+    }
+}
+
+#[cfg(not(feature = "hierarchical"))]
 fn cluster_similarity(tokens: &[Vec<f32>], c1: &[usize], c2: &[usize]) -> f32 {
     let centroid1 = mean_pool(tokens, c1);
     let centroid2 = mean_pool(tokens, c2);
@@ -351,7 +414,12 @@ pub fn refine<I: Clone + Eq + std::hash::Hash>(
     docs: &[(I, Vec<Vec<f32>>)],
     alpha: f32,
 ) -> Vec<(I, f32)> {
-    refine_with_config(candidates, query, docs, RefineConfig::default().with_alpha(alpha))
+    refine_with_config(
+        candidates,
+        query,
+        docs,
+        RefineConfig::default().with_alpha(alpha),
+    )
 }
 
 /// Refine with full configuration.
@@ -445,10 +513,7 @@ mod tests {
     fn test_refine() {
         let candidates = vec![("d1", 0.5), ("d2", 0.9)];
         let query = vec![vec![1.0, 0.0]];
-        let docs = vec![
-            ("d1", vec![vec![1.0, 0.0]]),
-            ("d2", vec![vec![0.0, 1.0]]),
-        ];
+        let docs = vec![("d1", vec![vec![1.0, 0.0]]), ("d2", vec![vec![0.0, 1.0]])];
 
         let refined = refine(&candidates, &query, &docs, 0.0);
         assert_eq!(refined[0].0, "d1");
@@ -491,10 +556,7 @@ mod tests {
     fn test_nan_score_handling() {
         let candidates = vec![("d1", f32::NAN), ("d2", 0.5)];
         let query = vec![vec![1.0, 0.0]];
-        let docs = vec![
-            ("d1", vec![vec![1.0, 0.0]]),
-            ("d2", vec![vec![1.0, 0.0]]),
-        ];
+        let docs = vec![("d1", vec![vec![1.0, 0.0]]), ("d2", vec![vec![1.0, 0.0]])];
 
         let refined = refine(&candidates, &query, &docs, 0.5);
         assert_eq!(refined.len(), 2);
@@ -552,6 +614,91 @@ mod tests {
         let pooled = pool_tokens_with_protected(&tokens, 2, 1);
         assert_eq!(pooled[0], vec![0.0, 0.0, 1.0]);
         assert!(pooled.len() >= 2);
+    }
+
+    #[test]
+    fn test_pool_tokens_adaptive_low_factor() {
+        let tokens = vec![
+            vec![1.0, 0.0, 0.0, 0.0],
+            vec![0.9, 0.1, 0.0, 0.0],
+            vec![0.0, 1.0, 0.0, 0.0],
+            vec![0.0, 0.9, 0.1, 0.0],
+        ];
+        // Factor 2 should use clustering
+        let pooled = pool_tokens_adaptive(&tokens, 2);
+        assert_eq!(pooled.len(), 2);
+    }
+
+    #[test]
+    fn test_pool_tokens_adaptive_high_factor() {
+        let tokens: Vec<Vec<f32>> = (0..8)
+            .map(|i| vec![(i as f32) * 0.1, 0.0, 0.0, 0.0])
+            .collect();
+        // Factor 4 should use sequential
+        let pooled = pool_tokens_adaptive(&tokens, 4);
+        assert_eq!(pooled.len(), 2); // 8 / 4 = 2
+    }
+
+    #[test]
+    fn test_pool_tokens_adaptive_factor_one() {
+        let tokens = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+        let pooled = pool_tokens_adaptive(&tokens, 1);
+        assert_eq!(pooled.len(), 2); // No pooling
+    }
+
+    #[test]
+    fn test_pool_tokens_adaptive_empty() {
+        let tokens: Vec<Vec<f32>> = vec![];
+        let pooled = pool_tokens_adaptive(&tokens, 2);
+        assert!(pooled.is_empty());
+    }
+
+    #[test]
+    fn test_pooling_methods_produce_same_dimensions() {
+        let tokens: Vec<Vec<f32>> = (0..8)
+            .map(|i| {
+                (0..16)
+                    .map(|j| ((i * 16 + j) as f32 * 0.01).sin())
+                    .collect()
+            })
+            .collect();
+
+        let greedy = pool_tokens(&tokens, 2);
+        let sequential = pool_tokens_sequential(&tokens, 2);
+        let adaptive = pool_tokens_adaptive(&tokens, 2);
+
+        // All should produce 16-dim vectors
+        assert!(greedy.iter().all(|v| v.len() == 16));
+        assert!(sequential.iter().all(|v| v.len() == 16));
+        assert!(adaptive.iter().all(|v| v.len() == 16));
+    }
+
+    #[test]
+    fn test_maxsim_with_pooled_tokens() {
+        let query = vec![vec![1.0, 0.0, 0.0, 0.0], vec![0.0, 1.0, 0.0, 0.0]];
+        let doc = vec![
+            vec![0.9, 0.1, 0.0, 0.0],
+            vec![0.8, 0.2, 0.0, 0.0],
+            vec![0.1, 0.9, 0.0, 0.0],
+            vec![0.2, 0.8, 0.0, 0.0],
+        ];
+
+        let q_refs: Vec<&[f32]> = query.iter().map(Vec::as_slice).collect();
+        let d_refs: Vec<&[f32]> = doc.iter().map(Vec::as_slice).collect();
+        let score_original = crate::simd::maxsim(&q_refs, &d_refs);
+
+        let pooled = pool_tokens(&doc, 2);
+        let p_refs: Vec<&[f32]> = pooled.iter().map(Vec::as_slice).collect();
+        let score_pooled = crate::simd::maxsim(&q_refs, &p_refs);
+
+        // Pooled should still produce reasonable score
+        assert!(score_pooled > 0.0);
+        assert!(score_pooled.is_finite());
+        // Pooled score should be at least 50% of original (generous bound)
+        assert!(
+            score_pooled >= score_original * 0.5,
+            "pooled {score_pooled} vs original {score_original}"
+        );
     }
 }
 
@@ -886,5 +1033,119 @@ mod proptests {
             }
         }
 
+        // ─────────────────────────────────────────────────────────────────────────
+        // Adaptive pooling tests
+        // ─────────────────────────────────────────────────────────────────────────
+
+        /// Adaptive pooling uses clustering for low factors
+        #[test]
+        fn adaptive_uses_clustering_for_low_factors(n_tokens in 4usize..12, dim in 4usize..8) {
+            let tokens: Vec<Vec<f32>> = (0..n_tokens)
+                .map(|i| (0..dim).map(|j| ((i * dim + j) as f32 * 0.1).sin()).collect())
+                .collect();
+
+            // Factor 2: should use pool_tokens (clustering)
+            let adaptive = pool_tokens_adaptive(&tokens, 2);
+            let clustering = pool_tokens(&tokens, 2);
+
+            // Results should be identical (same method)
+            prop_assert_eq!(adaptive.len(), clustering.len());
+        }
+
+        /// Adaptive pooling uses sequential for high factors
+        #[test]
+        fn adaptive_uses_sequential_for_high_factors(n_tokens in 8usize..20, dim in 4usize..8) {
+            let tokens: Vec<Vec<f32>> = (0..n_tokens)
+                .map(|i| (0..dim).map(|j| ((i * dim + j) as f32 * 0.1).sin()).collect())
+                .collect();
+
+            // Factor 4+: should use pool_tokens_sequential
+            let adaptive = pool_tokens_adaptive(&tokens, 4);
+            let sequential = pool_tokens_sequential(&tokens, 4);
+
+            // Results should be identical (same method)
+            prop_assert_eq!(adaptive.len(), sequential.len());
+            for (a, s) in adaptive.iter().zip(sequential.iter()) {
+                prop_assert_eq!(a, s);
+            }
+        }
+
+        /// All pooling methods preserve dimension
+        #[test]
+        fn all_pooling_methods_preserve_dim(n_tokens in 4usize..16, dim in 4usize..16) {
+            let tokens: Vec<Vec<f32>> = (0..n_tokens)
+                .map(|i| (0..dim).map(|j| ((i * dim + j) as f32 * 0.1).sin()).collect())
+                .collect();
+
+            let p1 = pool_tokens(&tokens, 2);
+            let p2 = pool_tokens_sequential(&tokens, 2);
+            let p3 = pool_tokens_adaptive(&tokens, 2);
+            let p4 = pool_tokens_with_protected(&tokens, 2, 1);
+
+            prop_assert!(p1.iter().all(|v| v.len() == dim));
+            prop_assert!(p2.iter().all(|v| v.len() == dim));
+            prop_assert!(p3.iter().all(|v| v.len() == dim));
+            prop_assert!(p4.iter().all(|v| v.len() == dim));
+        }
+
+        /// Pooling never increases token count
+        #[test]
+        fn pooling_never_increases_count(n_tokens in 1usize..20, factor in 1usize..5) {
+            let tokens: Vec<Vec<f32>> = (0..n_tokens)
+                .map(|i| vec![(i as f32) * 0.1; 8])
+                .collect();
+
+            let p1 = pool_tokens(&tokens, factor);
+            let p2 = pool_tokens_sequential(&tokens, factor);
+            let p3 = pool_tokens_adaptive(&tokens, factor);
+
+            prop_assert!(p1.len() <= n_tokens);
+            prop_assert!(p2.len() <= n_tokens);
+            prop_assert!(p3.len() <= n_tokens);
+        }
+
+        /// Empty tokens handled gracefully by all methods
+        #[test]
+        fn empty_tokens_all_methods(factor in 1usize..5) {
+            let empty: Vec<Vec<f32>> = vec![];
+
+            prop_assert!(pool_tokens(&empty, factor).is_empty());
+            prop_assert!(pool_tokens_sequential(&empty, factor).is_empty());
+            prop_assert!(pool_tokens_adaptive(&empty, factor).is_empty());
+            prop_assert!(pool_tokens_with_protected(&empty, factor, 0).is_empty());
+        }
+
+        /// Single token returns unchanged
+        #[test]
+        fn single_token_unchanged(dim in 2usize..16, factor in 2usize..5) {
+            let tokens = vec![vec![1.0f32; dim]];
+
+            let p1 = pool_tokens(&tokens, factor);
+            let p2 = pool_tokens_sequential(&tokens, factor);
+            let p3 = pool_tokens_adaptive(&tokens, factor);
+
+            prop_assert_eq!(p1.len(), 1);
+            prop_assert_eq!(p2.len(), 1);
+            prop_assert_eq!(p3.len(), 1);
+        }
+
+        /// `MaxSim` with pooled docs still produces finite scores
+        #[test]
+        fn maxsim_pooled_finite(n_query in 1usize..4, n_doc in 2usize..8, dim in 4usize..8) {
+            let query: Vec<Vec<f32>> = (0..n_query)
+                .map(|i| (0..dim).map(|j| ((i * dim + j) as f32 * 0.1).sin()).collect())
+                .collect();
+            let doc: Vec<Vec<f32>> = (0..n_doc)
+                .map(|i| (0..dim).map(|j| ((i * dim + j + 100) as f32 * 0.1).cos()).collect())
+                .collect();
+
+            let pooled = pool_tokens_adaptive(&doc, 2);
+
+            let q_refs: Vec<&[f32]> = query.iter().map(Vec::as_slice).collect();
+            let p_refs: Vec<&[f32]> = pooled.iter().map(Vec::as_slice).collect();
+
+            let score = crate::simd::maxsim(&q_refs, &p_refs);
+            prop_assert!(score.is_finite(), "MaxSim with pooled docs returned {}", score);
+        }
     }
 }

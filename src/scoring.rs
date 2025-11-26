@@ -67,11 +67,7 @@ pub trait Scorer {
     fn score(&self, query: &[f32], doc: &[f32]) -> f32;
 
     /// Rank documents by score (descending).
-    fn rank<I: Clone>(
-        &self,
-        query: &[f32],
-        docs: &[(I, &[f32])],
-    ) -> Vec<(I, f32)> {
+    fn rank<I: Clone>(&self, query: &[f32], docs: &[(I, &[f32])]) -> Vec<(I, f32)> {
         let mut results: Vec<(I, f32)> = docs
             .iter()
             .map(|(id, doc)| (id.clone(), self.score(query, doc)))
@@ -122,11 +118,7 @@ pub trait TokenScorer {
     fn score_tokens(&self, query: &[&[f32]], doc: &[&[f32]]) -> f32;
 
     /// Rank documents by token-level score (descending).
-    fn rank_tokens<I: Clone>(
-        &self,
-        query: &[&[f32]],
-        docs: &[(I, Vec<&[f32]>)],
-    ) -> Vec<(I, f32)> {
+    fn rank_tokens<I: Clone>(&self, query: &[&[f32]], docs: &[(I, Vec<&[f32]>)]) -> Vec<(I, f32)> {
         let mut results: Vec<(I, f32)> = docs
             .iter()
             .map(|(id, doc_tokens)| (id.clone(), self.score_tokens(query, doc_tokens)))
@@ -207,10 +199,7 @@ mod tests {
     fn test_dense_rank() {
         let scorer = DenseScorer::Cosine;
         let query = &[1.0f32, 0.0][..];
-        let docs: Vec<(&str, &[f32])> = vec![
-            ("d1", &[0.0, 1.0][..]),
-            ("d2", &[1.0, 0.0][..]),
-        ];
+        let docs: Vec<(&str, &[f32])> = vec![("d1", &[0.0, 1.0][..]), ("d2", &[1.0, 0.0][..])];
 
         let ranked = scorer.rank(query, &docs);
         assert_eq!(ranked[0].0, "d2");
@@ -415,4 +404,3 @@ mod proptests {
         }
     }
 }
-

@@ -234,7 +234,9 @@ mod tests {
     #[test]
     fn test_dot_simd_vs_portable() {
         // Test various lengths around SIMD boundaries
-        for len in [0, 1, 3, 4, 5, 7, 8, 9, 15, 16, 17, 31, 32, 33, 100, 256, 1024] {
+        for len in [
+            0, 1, 3, 4, 5, 7, 8, 9, 15, 16, 17, 31, 32, 33, 100, 256, 1024,
+        ] {
             let a: Vec<f32> = (0..len).map(|i| (i as f32) * 0.1).collect();
             let b: Vec<f32> = (0..len).map(|i| (i as f32) * 0.2 + 1.0).collect();
 
@@ -400,6 +402,143 @@ mod proptests {
             prop_assert_eq!(maxsim(&empty, &q_refs), 0.0);
             // Empty doc always returns 0
             prop_assert_eq!(maxsim(&q_refs, &empty), 0.0);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // Additional mathematical properties
+        // ─────────────────────────────────────────────────────────────────────────
+
+        /// Dot product with self equals squared L2 norm
+        #[test]
+        fn dot_self_is_squared_norm(v in arb_vec(32)) {
+            let dot_self = dot(&v, &v);
+            let n = norm(&v);
+            let squared_norm = n * n;
+            // Use relative tolerance for large values
+            let tolerance = (squared_norm.abs() * 1e-4).max(1e-4);
+            prop_assert!(
+                (dot_self - squared_norm).abs() < tolerance,
+                "dot(v,v) = {} but norm²= {}",
+                dot_self,
+                squared_norm
+            );
+        }
+
+        /// Cosine with self is 1 (for non-zero vectors)
+        #[test]
+        fn cosine_self_is_one(v in arb_vec(16).prop_filter("non-zero", |v| norm(v) > 1e-6)) {
+            let c = cosine(&v, &v);
+            prop_assert!(
+                (c - 1.0).abs() < 1e-5,
+                "cosine(v, v) = {} should be 1",
+                c
+            );
+        }
+
+        /// Norm is non-negative
+        #[test]
+        fn norm_nonnegative(v in arb_vec(64)) {
+            let n = norm(&v);
+            prop_assert!(n >= 0.0, "norm {} should be non-negative", n);
+        }
+
+        /// Norm of scaled vector: ||αv|| = |α| ||v||
+        #[test]
+        fn norm_scaling(v in arb_vec(16), alpha in -10.0f32..10.0) {
+            let scaled: Vec<f32> = v.iter().map(|x| x * alpha).collect();
+            let n_v = norm(&v);
+            let n_scaled = norm(&scaled);
+            let expected = alpha.abs() * n_v;
+            prop_assert!(
+                (n_scaled - expected).abs() < 1e-4,
+                "||αv|| = {} but |α|||v|| = {}",
+                n_scaled,
+                expected
+            );
+        }
+
+        /// Dot product is bilinear: dot(αa, b) = α·dot(a, b)
+        #[test]
+        fn dot_bilinear(a in arb_vec(16), b in arb_vec(16), alpha in -5.0f32..5.0) {
+            let scaled_a: Vec<f32> = a.iter().map(|x| x * alpha).collect();
+            let dot_scaled = dot(&scaled_a, &b);
+            let expected = alpha * dot(&a, &b);
+            prop_assert!(
+                (dot_scaled - expected).abs() < 1e-3,
+                "dot(αa, b) = {} but α·dot(a, b) = {}",
+                dot_scaled,
+                expected
+            );
+        }
+
+        /// Cauchy-Schwarz: |dot(a, b)| <= ||a|| ||b||
+        #[test]
+        fn cauchy_schwarz(a in arb_vec(32), b in arb_vec(32)) {
+            let d = dot(&a, &b).abs();
+            let bound = norm(&a) * norm(&b);
+            prop_assert!(
+                d <= bound + 1e-4,
+                "|dot(a,b)| = {} should be <= ||a||·||b|| = {}",
+                d,
+                bound
+            );
+        }
+
+        /// MaxSim scales linearly with query token count for identical matches
+        #[test]
+        fn maxsim_scales_with_query_count(n_query in 1usize..5, dim in 4usize..8) {
+            // Create identical query and doc token
+            let token: Vec<f32> = (0..dim).map(|i| (i as f32 + 1.0) * 0.1).collect();
+            let query: Vec<Vec<f32>> = vec![token.clone(); n_query];
+            let doc = vec![token.clone()];
+
+            let q_refs: Vec<&[f32]> = query.iter().map(Vec::as_slice).collect();
+            let d_refs: Vec<&[f32]> = doc.iter().map(Vec::as_slice).collect();
+
+            let score = maxsim(&q_refs, &d_refs);
+            // Each query token has max sim = ||token||² (dot with itself)
+            let expected = n_query as f32 * dot(&token, &token);
+
+            prop_assert!(
+                (score - expected).abs() < 1e-4,
+                "MaxSim should scale linearly: {} vs expected {}",
+                score,
+                expected
+            );
+        }
+
+        /// MaxSim with normalized vectors bounded by query count
+        #[test]
+        fn maxsim_cosine_bounded_by_query_count(n_query in 1usize..4, n_doc in 1usize..4) {
+            // Create unit vectors
+            let query: Vec<Vec<f32>> = (0..n_query)
+                .map(|i| {
+                    let mut v = vec![0.0f32; 8];
+                    v[i % 8] = 1.0;
+                    v
+                })
+                .collect();
+            let doc: Vec<Vec<f32>> = (0..n_doc)
+                .map(|i| {
+                    let mut v = vec![0.0f32; 8];
+                    v[(i + 1) % 8] = 1.0;
+                    v
+                })
+                .collect();
+
+            let q_refs: Vec<&[f32]> = query.iter().map(Vec::as_slice).collect();
+            let d_refs: Vec<&[f32]> = doc.iter().map(Vec::as_slice).collect();
+
+            let score = maxsim_cosine(&q_refs, &d_refs);
+
+            // Each query token contributes at most 1 (max cosine with any doc token)
+            let upper_bound = n_query as f32;
+            prop_assert!(
+                score <= upper_bound + 1e-5,
+                "MaxSim cosine {} should be <= {}",
+                score,
+                upper_bound
+            );
         }
     }
 }

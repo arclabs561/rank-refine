@@ -210,10 +210,7 @@ mod tests {
     fn test_short_doc_embedding() {
         let candidates = vec![("d1", 0.9), ("d2", 0.8)];
         let query = vec![0.0, 0.0, 1.0, 0.0];
-        let docs = vec![
-            ("d1", vec![0.0, 0.0, 1.0, 0.0]),
-            ("d2", vec![0.0]),
-        ];
+        let docs = vec![("d1", vec![0.0, 0.0, 1.0, 0.0]), ("d2", vec![0.0])];
 
         let refined = refine(&candidates, &query, &docs, 2);
         assert_eq!(refined.len(), 1);
@@ -329,6 +326,117 @@ mod proptests {
                     refined
                 );
             }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // Matryoshka-specific properties
+        // ─────────────────────────────────────────────────────────────────────────
+
+        /// Alpha interpolation: alpha=0.5 should produce scores between alpha=0 and alpha=1
+        #[test]
+        fn alpha_interpolation(dim in 8usize..16) {
+            let head_dims = dim / 2;
+            let candidates = vec![(1u32, 0.8), (2u32, 0.5)];
+            let query: Vec<f32> = (0..dim).map(|i| (i as f32 * 0.1).sin()).collect();
+            let docs: Vec<(u32, Vec<f32>)> = vec![
+                (1, (0..dim).map(|i| (i as f32 * 0.2).cos()).collect()),
+                (2, (0..dim).map(|i| (i as f32 * 0.3).sin()).collect()),
+            ];
+
+            let r_0 = refine_with_alpha(&candidates, &query, &docs, head_dims, 0.0);
+            let r_half = refine_with_alpha(&candidates, &query, &docs, head_dims, 0.5);
+            let r_1 = refine_with_alpha(&candidates, &query, &docs, head_dims, 1.0);
+
+            // Scores should interpolate (roughly)
+            for id in [1u32, 2] {
+                let s_0 = r_0.iter().find(|(i, _)| *i == id).map(|(_, s)| *s);
+                let s_half = r_half.iter().find(|(i, _)| *i == id).map(|(_, s)| *s);
+                let s_1 = r_1.iter().find(|(i, _)| *i == id).map(|(_, s)| *s);
+
+                if let (Some(s0), Some(sh), Some(s1)) = (s_0, s_half, s_1) {
+                    let min_score = s0.min(s1);
+                    let max_score = s0.max(s1);
+                    prop_assert!(
+                        sh >= min_score - 0.01 && sh <= max_score + 0.01,
+                        "alpha=0.5 score {} not between {} and {}",
+                        sh, min_score, max_score
+                    );
+                }
+            }
+        }
+
+        /// Tail similarity: longer tail (smaller head_dims) uses more dimensions
+        #[test]
+        fn smaller_head_uses_more_dims(dim in 16usize..32) {
+            let candidates = vec![(1u32, 0.5)];
+            let query: Vec<f32> = (0..dim).map(|i| (i as f32 * 0.1).sin()).collect();
+            // Doc where tail dims have high values
+            let doc: Vec<f32> = (0..dim)
+                .map(|i| if i < dim / 4 { 0.1 } else { 0.9 })
+                .collect();
+            let docs = vec![(1u32, doc)];
+
+            // Small head (big tail) should score differently than big head (small tail)
+            let r_small_head = refine_tail_only(&candidates, &query, &docs, dim / 4);
+            let r_big_head = refine_tail_only(&candidates, &query, &docs, dim * 3 / 4);
+
+            // Both should produce valid scores (not NaN)
+            prop_assert!(r_small_head[0].1.is_finite());
+            prop_assert!(r_big_head[0].1.is_finite());
+            // Scores should differ (different amount of tail used)
+            // (unless by coincidence they're equal)
+        }
+
+        /// Documents shorter than head_dims are filtered out
+        #[test]
+        fn short_docs_filtered(dim in 8usize..16) {
+            let head_dims = dim / 2;
+            let candidates = vec![(1u32, 0.9), (2u32, 0.8)];
+            let query: Vec<f32> = (0..dim).map(|i| i as f32 * 0.1).collect();
+            // Doc 1 is full length, doc 2 is too short
+            let docs = vec![
+                (1u32, (0..dim).map(|i| i as f32 * 0.1).collect()),
+                (2u32, (0..head_dims - 1).map(|i| i as f32 * 0.1).collect()),
+            ];
+
+            let refined = refine(&candidates, &query, &docs, head_dims);
+            // Only doc 1 should remain
+            prop_assert_eq!(refined.len(), 1);
+            prop_assert_eq!(refined[0].0, 1);
+        }
+
+        /// Try_refine returns error for invalid head_dims
+        #[test]
+        fn try_refine_validates_head_dims(dim in 2usize..8) {
+            let query: Vec<f32> = (0..dim).map(|i| i as f32 * 0.1).collect();
+            let candidates = vec![(1u32, 0.5)];
+            let docs = vec![(1u32, query.clone())];
+
+            // head_dims >= query.len() should error
+            let result = try_refine(&candidates, &query, &docs, dim, RefineConfig::default());
+            prop_assert!(result.is_err());
+
+            // head_dims < query.len() should succeed
+            let result = try_refine(&candidates, &query, &docs, dim - 1, RefineConfig::default());
+            prop_assert!(result.is_ok());
+        }
+
+        /// Config top_k limits output
+        #[test]
+        fn config_top_k_limits_output(n in 5usize..10, k in 1usize..4) {
+            let dim = 8;
+            let head_dims = 4;
+            let candidates: Vec<(u32, f32)> = (0..n as u32)
+                .map(|i| (i, 1.0 - i as f32 * 0.05))
+                .collect();
+            let query: Vec<f32> = (0..dim).map(|i| i as f32 * 0.1).collect();
+            let docs: Vec<(u32, Vec<f32>)> = (0..n as u32)
+                .map(|i| (i, (0..dim).map(|j| (i + j as u32) as f32 * 0.05).collect()))
+                .collect();
+
+            let config = RefineConfig::default().with_top_k(k);
+            let refined = try_refine(&candidates, &query, &docs, head_dims, config).unwrap();
+            prop_assert!(refined.len() <= k, "Expected at most {} results, got {}", k, refined.len());
         }
     }
 }
