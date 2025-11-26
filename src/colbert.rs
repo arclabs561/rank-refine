@@ -700,6 +700,60 @@ mod tests {
             "pooled {score_pooled} vs original {score_original}"
         );
     }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // Mutation-killing: verify exact mathematical behavior
+    // ───────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn pool_greedy_exact_count() {
+        // Factor 2 on 4 tokens should give 2
+        let tokens = vec![vec![1.0, 0.0], vec![0.9, 0.1], vec![0.0, 1.0], vec![0.1, 0.9]];
+        let pooled = pool_tokens_greedy(&tokens, 2);
+        assert_eq!(pooled.len(), 2);
+    }
+
+    #[test]
+    fn pool_sequential_exact_count() {
+        // 8 tokens / factor 2 = 4
+        let tokens: Vec<Vec<f32>> = (0..8).map(|i| vec![i as f32]).collect();
+        let pooled = pool_tokens_sequential(&tokens, 2);
+        assert_eq!(pooled.len(), 4);
+    }
+
+    #[test]
+    fn refine_alpha_zero_ignores_original() {
+        let query = vec![vec![1.0, 0.0]];
+        let candidates = vec![("d1", 100.0), ("d2", 0.0)];
+        let docs = vec![
+            ("d1", vec![vec![0.0, 1.0]]), // maxsim ~0
+            ("d2", vec![vec![1.0, 0.0]]), // maxsim ~1
+        ];
+        let config = crate::RefineConfig::default().with_alpha(0.0);
+        let refined = refine_with_config(&candidates, &query, &docs, config);
+        assert_eq!(refined[0].0, "d2", "alpha=0 should rank by maxsim only");
+    }
+
+    #[test]
+    fn refine_alpha_one_ignores_maxsim() {
+        let query = vec![vec![1.0, 0.0]];
+        let candidates = vec![("d1", 1.0), ("d2", 0.5)];
+        let docs = vec![
+            ("d1", vec![vec![0.0, 1.0]]), // maxsim ~0
+            ("d2", vec![vec![1.0, 0.0]]), // maxsim ~1
+        ];
+        let config = crate::RefineConfig::default().with_alpha(1.0);
+        let refined = refine_with_config(&candidates, &query, &docs, config);
+        assert_eq!(refined[0].0, "d1", "alpha=1 should rank by original only");
+    }
+
+    #[cfg(feature = "hierarchical")]
+    #[test]
+    fn hierarchical_returns_target_count() {
+        let tokens: Vec<Vec<f32>> = (0..8).map(|i| vec![(i as f32 * 0.1).sin(); 16]).collect();
+        let pooled = pool_tokens_hierarchical(&tokens, 4);
+        assert_eq!(pooled.len(), 4);
+    }
 }
 
 #[cfg(test)]
