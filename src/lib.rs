@@ -1,18 +1,27 @@
 //! # rank-refine
 //!
-//! Reranking for retrieval pipelines.
+//! Fast reranking for retrieval pipelines.
 //!
 //! ## Modules
 //!
-//! - [`matryoshka`] — Refine using tail dimensions of MRL embeddings
-//! - [`colbert`] — MaxSim scoring for token-level embeddings
-//! - [`simd`] — Vector operations (dot, cosine, maxsim)
+//! | Module | Purpose | Notes |
+//! |--------|---------|-------|
+//! | [`matryoshka`] | Refine with MRL tail dimensions | Zero deps |
+//! | [`colbert`] | MaxSim late interaction | Zero deps |
+//! | [`crossencoder`] | Transformer scoring | Trait-based, BYOM |
+//! | [`simd`] | Vector ops (AVX2/NEON) | Auto-dispatch |
 //!
 //! ## Pipeline
 //!
 //! ```text
 //! Retrieve → Fuse (rank-fusion) → Refine (this crate) → Top-K
 //! ```
+//!
+//! ## Performance
+//!
+//! SIMD-accelerated on x86_64 (AVX2+FMA) and aarch64 (NEON):
+//! - **3×** faster dot/cosine operations
+//! - **3.8×** faster MaxSim scoring
 //!
 //! ## Quick Example
 //!
@@ -30,5 +39,6 @@
 //! ```
 
 pub mod colbert;
+pub mod crossencoder;
 pub mod matryoshka;
 pub mod simd;

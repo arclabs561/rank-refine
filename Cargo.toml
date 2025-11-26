@@ -1,13 +1,20 @@
 [package]
 name = "rank-refine"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-description = "Reranking for retrieval — Matryoshka, ColBERT MaxSim"
-keywords = ["search", "rerank", "colbert", "matryoshka", "maxsim"]
+description = "Fast reranking — Matryoshka, ColBERT MaxSim, Cross-encoder (SIMD-accelerated)"
+keywords = ["search", "rerank", "colbert", "matryoshka", "simd"]
 categories = ["algorithms", "science"]
 repository = "https://github.com/arclabs561/rank-refine"
 readme = "README.md"
 authors = ["Arc <attobop@gmail.com>"]
 
 [dependencies]
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "refine"
+harness = false
