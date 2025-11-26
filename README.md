@@ -2,30 +2,25 @@
 
 Model-based reranking for retrieval pipelines.
 
-[![Crates.io](https://img.shields.io/crates/v/rank-refine.svg)](https://crates.io/crates/rank-refine)
-[![Docs](https://docs.rs/rank-refine/badge.svg)](https://docs.rs/rank-refine)
-[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE-MIT)
+**Status:** Stub. See [DESIGN.md](DESIGN.md) for roadmap.
 
-**Status:** Early development. See [DESIGN.md](DESIGN.md) for roadmap.
-
-## The Two-Crate Strategy
+## Two-Crate Approach
 
 ```
-Retrieve (BM25, Dense) → Fuse (rank-fusion) → Rerank (rank-refine) → Top-K
+Retrieve → Fuse (rank-fusion) → Refine (this crate) → Top-K
 ```
 
 | Crate | Purpose | Dependencies |
 |-------|---------|--------------|
-| [rank-fusion](https://crates.io/crates/rank-fusion) | Combine result lists | Zero |
+| [rank-fusion](https://crates.io/crates/rank-fusion) | Combine result lists | None |
 | rank-refine | Re-score with models | candle/ort (optional) |
 
 ## Planned Features
 
-- **Matryoshka refinement** — Refine coarse results using tail dimensions (SIMD)
-- **Cross-encoder** — Score pairs with quantized transformers
+- **Matryoshka refinement** — Refine coarse results using tail dimensions (SIMD, no deps)
+- **Cross-encoder** — Score pairs with transformers (candle or ort)
 - **ColBERT/PLAID MaxSim** — Late interaction scoring
 
 ## License
 
 MIT OR Apache-2.0
-
