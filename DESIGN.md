@@ -6,6 +6,33 @@ Two crates for retrieval pipelines:
 Retrieve → Fuse (rank-fusion) → Refine (this crate) → Top-K
 ```
 
+## Why a Dedicated Reranking Library?
+
+Reranking is architecturally distinct from both retrieval and storage. Research and
+industry practice (2024) converge on separating these concerns:
+
+| Concern | Optimized For | Where |
+|---------|---------------|-------|
+| Storage | Billions of vectors, fast ANN | Vector database (qdrant, milvus) |
+| Inference | Transformer models, batching | Embedding service (fastembed, ort) |
+| **Reranking** | Small candidate sets, SIMD scoring | **Dedicated library** |
+
+**Why not embed reranking in the vector database?**
+
+1. **Computational mismatch**: Databases optimize for ANN over millions; reranking
+   optimizes for precise scoring of 20-100 candidates.
+
+2. **Vendor independence**: Swap databases without rewriting reranking logic.
+
+3. **Pluggable strategies**: Easily switch between dense/late-interaction/cross-encoder
+   without touching infrastructure.
+
+4. **Independent scaling**: Run reranking on CPU while database uses GPU/specialized
+   hardware.
+
+From [DynamicRAG (Sun et al., 2025)](https://arxiv.org/abs/2505.07233): reranking is
+"crucial but often under-explored" — separating it enables focused optimization.
+
 ## Why Late Interaction?
 
 Dense retrieval compresses a document to a single vector, losing token-level semantics.
@@ -136,21 +163,39 @@ Sorting uses `f32::total_cmp` for deterministic ordering:
 
 ## Implementation Comparison
 
-Based on review of production Rust implementations (qdrant, fast-plaid, vecstore):
+Based on review of production Rust implementations:
 
-| Feature | qdrant | fast-plaid | vecstore | rank-refine |
-|---------|--------|------------|----------|-------------|
-| SIMD dispatch | Runtime | GPU (tch) | None | Runtime |
-| Min dim threshold | 16/32 | N/A | None | 16 |
-| NaN handling | N/A | N/A | `partial_cmp` | `total_cmp` |
-| Token pooling | None | Quantization | None | Clustering |
-| Metric traits | `Metric<T>` | N/A | Config | `Scorer`/`TokenScorer` |
+| Feature | qdrant | vindicator | fast-plaid | rank-refine |
+|---------|--------|------------|------------|-------------|
+| Focus | Vector DB | Rank fusion | PLAID GPU | Reranking |
+| SIMD | AVX, 4-way unroll | N/A | tch (GPU) | AVX+FMA |
+| Dim threshold | 16/32 | N/A | N/A | 16 |
+| NaN scores | N/A | noisy_float | N/A | `total_cmp` |
+| Token pooling | N/A | N/A | Quantization | Clustering |
+| Score collection | Vec | SmallVec<4> | Tensor | Vec |
 
-Key differences:
-- **qdrant**: Full vector database; SIMD optimized with dimension thresholds
-- **fast-plaid**: GPU-based PLAID engine; uses PyTorch tensors
-- **vecstore**: Alpha-stage; simpler MaxSim but lacks NaN safety
-- **rank-refine**: CPU reranking library; unique hierarchical token pooling
+### Tricks Gleaned from Production Code
+
+**From qdrant** (22k stars):
+- Four-way loop unrolling in AVX (32 elements/iteration for dot product)
+- Separate `hsum256_ps` for horizontal sum
+- Dimension threshold to skip SIMD overhead for small vectors
+
+**From vindicator**:
+- `SmallVec<[_; 4]>` for score collection (avoids heap for small fusions)
+- `noisy_float::n32` for NaN-safe arithmetic (alternative to `total_cmp`)
+- Generic `SearchEntry` trait for flexible ID types
+
+**From fast-plaid**:
+- Memory-mapped ColBERT indices reduce RAM from 86GB to 8GB
+- Quantization-based compression as alternative to clustering
+
+### Our Design Choices
+
+1. **`total_cmp` over `noisy_float`**: Zero dependencies; works on stable Rust
+2. **Clustering over quantization**: Higher quality at same storage (research-backed)
+3. **Slice-based API**: Zero-copy where possible; user controls allocation
+4. **BYOM**: No inference code = smaller binary, flexible model choice
 
 ## References
 

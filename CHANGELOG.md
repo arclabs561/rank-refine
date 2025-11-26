@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.14] - 2025-11-26
+
+### Changed
+- Added "Why This Library?" section to README with research citations
+- Expanded DESIGN.md with architectural motivation (DynamicRAG 2025)
+- Added implementation comparison with qdrant, vindicator, fast-plaid
+- Documented tricks gleaned from production codebases
+
 ## [0.7.13] - 2025-11-26
 
 ### Changed

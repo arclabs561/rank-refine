@@ -7,6 +7,21 @@ Reranking algorithms for retrieval pipelines.
 [![Docs](https://docs.rs/rank-refine/badge.svg)](https://docs.rs/rank-refine)
 [![MSRV](https://img.shields.io/badge/MSRV-1.74-blue)](https://blog.rust-lang.org/2023/11/16/Rust-1.74.0.html)
 
+## Why This Library?
+
+Reranking improves RAG quality by **up to 48%** (Pinecone benchmarks) but requires
+different optimization than vector databases:
+
+| Step | Optimizes For | Scale |
+|------|---------------|-------|
+| Retrieval | Millions of vectors, ANN | Fast, approximate |
+| **Reranking** | 20-100 candidates, exact | Precise, SIMD-optimized |
+
+A dedicated reranking library lets you:
+- **Swap databases** without rewriting scoring logic
+- **Mix strategies** (dense + late interaction + cross-encoder)
+- **Scale independently** from your vector infrastructure
+
 ## Design: Bring Your Own Model (BYOM)
 
 This crate provides **scoring algorithms only** — no model weights, no inference.
@@ -90,6 +105,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+## When to Use Which Algorithm
+
+| You Have | Use | Why |
+|----------|-----|-----|
+| Dense embeddings (bi-encoder) | `cosine` / `dot` | Fast, SIMD-accelerated |
+| Token embeddings (ColBERT) | `maxsim_vecs` | Late interaction captures fine-grained similarity |
+| Matryoshka (MRL) embeddings | `mrl_refine` | Tail dimensions refine coarse prefix scores |
+| Model you can call | `CrossEncoderModel` trait | Most accurate, but requires inference |
 
 ## Modules
 
