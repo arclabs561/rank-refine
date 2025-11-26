@@ -1,19 +1,23 @@
 # Changelog
 
+## [0.7.18] - 2025-11-26
+
+### Changed
+- **Simplified `embedding` module**: Removed `QueryEmbed`/`DocEmbed` types — instruction
+  prefixes are the encoding model's concern, not this crate's. By the time embeddings
+  reach here, they're just `&[f32]`.
+- Kept `Normalized` (unit norm guarantee where dot=cosine) and `MaskedTokens` (batched
+  late interaction with padding)
+- Updated DESIGN.md to clarify scope: this crate scores embeddings, doesn't train them
+
 ## [0.7.17] - 2025-11-26
 
 ### Added
-- **`embedding` module**: Type-safe embedding wrappers that encode invariants at compile time:
-  - `Normalized`: Guarantees unit L2 norm (contrastive learning embeddings)
-  - `QueryEmbed`/`DocEmbed`: Role markers for instruction-tuned models
+- **`embedding` module**: Type-safe embedding wrappers
+  - `Normalized`: Guarantees unit L2 norm (dot = cosine)
   - `MaskedTokens`: Variable-length token batches with padding mask
   - `maxsim_masked`: MaxSim with mask support for batched processing
 - `maxsim_batch` and `maxsim_cosine_batch`: Score one query against multiple documents
-- Embedding training paradigm taxonomy in DESIGN.md (contrastive, metric, instruction-tuned)
-- References for SimCLR, InfoNCE, INSTRUCTOR, E5 papers
-
-### Changed
-- Prelude now exports `Normalized`, `QueryEmbed`, `DocEmbed`, `MaskedTokens`, `maxsim_masked`, `normalize`
 
 ## [0.7.16] - 2025-11-26
 

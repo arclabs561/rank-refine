@@ -71,9 +71,7 @@ pub mod simd;
 /// ```
 pub mod prelude {
     // Type-safe embeddings
-    pub use crate::embedding::{
-        maxsim_masked, normalize, DocEmbed, MaskedTokens, Normalized, QueryEmbed,
-    };
+    pub use crate::embedding::{maxsim_masked, normalize, MaskedTokens, Normalized};
 
     // Traits and types
     pub use crate::scoring::{

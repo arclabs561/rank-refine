@@ -1,37 +1,34 @@
-//! Type-safe embedding wrappers that encode geometric invariants.
+//! Type-safe embedding wrappers.
 //!
-//! This module provides newtypes that use the type system to prevent
-//! misuse and encode mathematical properties at compile time.
+//! This module provides newtypes for common embedding scenarios:
 //!
-//! ## Training Paradigm Taxonomy
+//! - [`Normalized`] — Unit L2 norm guarantee (dot = cosine)
+//! - [`MaskedTokens`] — Token embeddings with padding mask for batching
 //!
-//! | Paradigm | Loss Function | Resulting Geometry | Scoring |
-//! |----------|---------------|--------------------|---------| 
-//! | Contrastive | InfoNCE, triplet | Unit hypersphere | Cosine = Dot |
-//! | Metric Learning | Pull-push | Learned metric | Euclidean or learned |
-//! | Instruction-tuned | Task-conditioned contrastive | Asymmetric query/doc | Cosine |
+//! ## When to Use
 //!
-//! ## Type Safety
+//! **`Normalized`**: When embeddings are known to be unit normalized (e.g., from
+//! many contrastive models). The `dot` method is then cosine similarity.
 //!
-//! The type system encodes:
-//! - **Normalization**: `Normalized<T>` guarantees unit L2 norm
-//! - **Role**: `Query<T>` vs `Document<T>` for asymmetric models
-//! - **Masking**: `Masked<T>` carries validity information for padding
+//! **`MaskedTokens`**: When batching variable-length token sequences for late
+//! interaction (MaxSim). Padding tokens are excluded from scoring.
 //!
 //! ## Example
 //!
 //! ```rust
 //! use rank_refine::embedding::{Normalized, normalize};
 //!
-//! // Compile-time guarantee: these are unit vectors
+//! // Normalized embeddings: dot = cosine
 //! let q = normalize(&[3.0, 4.0]).unwrap();
 //! let d = normalize(&[1.0, 0.0]).unwrap();
-//!
-//! // Dot product on normalized vectors IS cosine similarity
-//! let cosine = q.dot(&d);
+//! let similarity = q.dot(&d);  // This IS cosine similarity
 //! ```
-
-use std::marker::PhantomData;
+//!
+//! ## What This Crate Doesn't Do
+//!
+//! This crate scores embeddings — it doesn't generate them. Training paradigm
+//! (contrastive, instruction-tuned, etc.) is the embedding model's concern.
+//! By the time embeddings reach this crate, they're just `&[f32]`.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Normalized Embedding (unit L2 norm)
@@ -45,9 +42,10 @@ use std::marker::PhantomData;
 ///
 /// # Why This Matters
 ///
-/// Contrastive learning (SimCLR, InfoNCE) produces embeddings where
-/// `cos(q, d) = q · d` because both are unit normalized. This type
-/// makes that assumption explicit and compiler-checked.
+/// When embeddings are unit normalized, `dot(a, b) = cosine(a, b)`.
+/// This type makes that assumption explicit. Many embedding models
+/// (especially those trained with contrastive losses) output normalized
+/// embeddings by default.
 #[derive(Debug, Clone)]
 pub struct Normalized {
     data: Vec<f32>,
@@ -77,11 +75,10 @@ impl Normalized {
         crate::simd::dot(&self.data, &other.data)
     }
 
-    /// Cosine similarity (redundant for normalized, but explicit).
+    /// Cosine similarity (same as `dot` for normalized vectors).
     #[inline]
     #[must_use]
     pub fn cosine(&self, other: &Normalized) -> f32 {
-        // For normalized vectors, dot = cosine
         self.dot(other)
     }
 }
@@ -110,83 +107,13 @@ pub fn normalize_or_zero(v: &[f32]) -> Normalized {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Query/Document Role (for asymmetric models)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Marker for query embeddings.
-pub struct QueryRole;
-
-/// Marker for document embeddings.
-pub struct DocumentRole;
-
-/// An embedding with explicit role (query or document).
-///
-/// # Why This Matters
-///
-/// Instruction-tuned models (INSTRUCTOR, E5) use different prefixes
-/// for queries vs documents. This type prevents accidentally scoring
-/// a query against a query, or mixing up the roles.
-///
-/// ```text
-/// INSTRUCTOR:
-///   query:    "Represent the question for retrieval: {text}"
-///   document: "Represent the document for retrieval: {text}"
-/// ```
-#[derive(Debug, Clone)]
-pub struct Embed<Role> {
-    data: Vec<f32>,
-    _role: PhantomData<Role>,
-}
-
-/// A query embedding (from instruction-tuned model with query prefix).
-pub type QueryEmbed = Embed<QueryRole>;
-
-/// A document embedding (from instruction-tuned model with doc prefix).
-pub type DocEmbed = Embed<DocumentRole>;
-
-impl<R> Embed<R> {
-    /// Create an embedding with the specified role.
-    pub fn new(data: Vec<f32>) -> Self {
-        Self {
-            data,
-            _role: PhantomData,
-        }
-    }
-
-    /// Access the underlying data.
-    #[inline]
-    #[must_use]
-    pub fn as_slice(&self) -> &[f32] {
-        &self.data
-    }
-
-    /// Dimension of the embedding.
-    #[inline]
-    #[must_use]
-    pub fn dim(&self) -> usize {
-        self.data.len()
-    }
-}
-
-impl QueryEmbed {
-    /// Score query against document (the correct direction).
-    #[inline]
-    #[must_use]
-    pub fn score(&self, doc: &DocEmbed) -> f32 {
-        crate::simd::cosine(&self.data, &doc.data)
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Masked Token Embeddings (for variable-length sequences)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Token embeddings with explicit padding mask.
 ///
-/// # Why This Matters
-///
-/// Batched processing (PyLate, ColPali style) requires padding shorter
-/// sequences. The mask indicates which tokens are real vs padding.
+/// When batching token sequences for late interaction (MaxSim), shorter
+/// sequences need padding. The mask indicates which tokens are real vs padding.
 ///
 /// # Invariant
 ///
@@ -284,36 +211,6 @@ pub fn maxsim_masked(query: &MaskedTokens, doc: &MaskedTokens) -> f32 {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Embedding Properties (trait-based encoding)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Marker trait for embeddings from contrastively trained models.
-///
-/// Guarantees: unit normalized, symmetric scoring OK.
-pub trait ContrastiveEmbed {
-    fn as_slice(&self) -> &[f32];
-}
-
-impl ContrastiveEmbed for Normalized {
-    fn as_slice(&self) -> &[f32] {
-        &self.data
-    }
-}
-
-/// Marker trait for embeddings from instruction-tuned models.
-///
-/// Guarantees: query/doc roles matter, use asymmetric scoring.
-pub trait InstructionEmbed {
-    fn as_slice(&self) -> &[f32];
-}
-
-impl<R> InstructionEmbed for Embed<R> {
-    fn as_slice(&self) -> &[f32] {
-        &self.data
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -346,15 +243,6 @@ mod tests {
     }
 
     #[test]
-    fn test_query_doc_scoring() {
-        let query = QueryEmbed::new(vec![1.0, 0.0, 0.0]);
-        let doc = DocEmbed::new(vec![0.9, 0.1, 0.0]);
-
-        let score = query.score(&doc);
-        assert!(score > 0.9); // should be close to 1
-    }
-
-    #[test]
     fn test_masked_tokens() {
         let tokens = vec![
             vec![1.0, 0.0],
@@ -370,10 +258,7 @@ mod tests {
 
     #[test]
     fn test_maxsim_masked() {
-        let query = MaskedTokens::new(
-            vec![vec![1.0, 0.0], vec![0.0, 1.0]],
-            vec![true, true],
-        );
+        let query = MaskedTokens::new(vec![vec![1.0, 0.0], vec![0.0, 1.0]], vec![true, true]);
         let doc = MaskedTokens::new(
             vec![vec![1.0, 0.0], vec![0.5, 0.5], vec![0.0, 0.0]], // last is padding
             vec![true, true, false],
@@ -480,4 +365,3 @@ mod proptests {
         }
     }
 }
-
