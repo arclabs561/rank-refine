@@ -1,65 +1,59 @@
 # rank-refine
 
-Model-based reranking for retrieval pipelines.
-
-## Install
+Reranking for retrieval pipelines.
 
 ```toml
 [dependencies]
-rank-refine = "0.2"
+rank-refine = "0.3"
 ```
 
-## Two-Crate Approach
+## Pipeline
 
 ```
 Retrieve → Fuse (rank-fusion) → Refine (this crate) → Top-K
 ```
 
-| Crate | Purpose | Dependencies |
-|-------|---------|--------------|
-| [rank-fusion](https://crates.io/crates/rank-fusion) | Combine result lists | None |
-| rank-refine | Re-score with expensive methods | None (candle/ort optional) |
+## Modules
 
-## Available: Matryoshka Refinement
+| Module | Use Case |
+|--------|----------|
+| `matryoshka` | Refine with tail dimensions of MRL embeddings |
+| `colbert` | MaxSim scoring for token-level embeddings |
+| `simd` | Vector ops (dot, cosine, maxsim) |
 
-MRL embeddings have a useful property: the first k dimensions are a valid coarse embedding.
+## Matryoshka Refinement
 
-Two-stage retrieval:
-1. **Coarse**: Search with first 64 dims (fast, cache-friendly)
-2. **Refine**: Re-score top candidates using tail dims (accurate)
+Two-stage retrieval with MRL embeddings:
 
 ```rust
 use rank_refine::matryoshka;
 
-// Candidates from coarse retrieval (first 64 dims)
-let candidates = vec![("doc1", 0.9), ("doc2", 0.85), ("doc3", 0.7)];
-
-// Full 128-dim embeddings for refinement
-let query: Vec<f32> = vec![0.1; 128];
+let candidates = vec![("doc1", 0.9), ("doc2", 0.8)];
+let query = vec![0.1; 128];
 let docs = vec![
     ("doc1", vec![0.2; 128]),
     ("doc2", vec![0.15; 128]),
-    ("doc3", vec![0.1; 128]),
 ];
 
-// Refine using dimensions 64..128
+// Coarse retrieval used dims 0..64, refine with 64..128
 let refined = matryoshka::refine(&candidates, &query, &docs, 64);
 ```
 
-### Blending Options
+## ColBERT MaxSim
+
+Late interaction scoring with token embeddings:
 
 ```rust
-// Custom blend: 70% original score, 30% tail similarity
-let refined = matryoshka::refine_with_alpha(&candidates, &query, &docs, 64, 0.7);
+use rank_refine::colbert;
 
-// Pure tail similarity (ignore original scores)
-let refined = matryoshka::refine_tail_only(&candidates, &query, &docs, 64);
+let query = vec![vec![1.0, 0.0], vec![0.0, 1.0]];  // 2 tokens
+let docs = vec![
+    ("doc1", vec![vec![0.9, 0.1], vec![0.1, 0.9]]),
+    ("doc2", vec![vec![0.5, 0.5]]),
+];
+
+let ranked = colbert::rank(&query, &docs);
 ```
-
-## Planned
-
-- **Cross-encoder** — Score pairs with transformers (candle or ort)
-- **ColBERT/PLAID MaxSim** — Late interaction scoring
 
 ## License
 

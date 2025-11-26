@@ -1,19 +1,13 @@
 [package]
 name = "rank-refine"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-description = "Model-based reranking for retrieval pipelines — Matryoshka, Cross-encoder, ColBERT"
-keywords = ["search", "rerank", "cross-encoder", "matryoshka", "colbert"]
+description = "Reranking for retrieval — Matryoshka, ColBERT MaxSim"
+keywords = ["search", "rerank", "colbert", "matryoshka", "maxsim"]
 categories = ["algorithms", "science"]
 repository = "https://github.com/arclabs561/rank-refine"
 readme = "README.md"
 authors = ["Arc <attobop@gmail.com>"]
 
 [dependencies]
-# No deps for now - add candle/ort as optional features later
-
-[features]
-default = []
-# candle = ["dep:candle-core", "dep:candle-nn"]
-# ort = ["dep:ort"]
