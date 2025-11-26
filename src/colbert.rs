@@ -3,9 +3,6 @@
 //! ColBERT represents queries and documents as bags of token embeddings,
 //! then scores using MaxSim: sum over query tokens of max similarity to any doc token.
 //!
-//! This module provides the MaxSim operator for reranking candidates
-//! when you have token-level embeddings.
-//!
 //! ## Example
 //!
 //! ```rust
@@ -67,6 +64,10 @@ pub fn rank<I: Clone + Eq + Hash>(
 /// * `query` - Query token embeddings
 /// * `docs` - Document token embeddings
 /// * `alpha` - Weight for original score (0.0 = all MaxSim, 1.0 = all original)
+///
+/// # Note
+///
+/// Candidates not found in `docs` are silently dropped from the result.
 pub fn refine<I: Clone + Eq + Hash>(
     candidates: &[(I, f32)],
     query: &[Vec<f32>],
@@ -110,6 +111,16 @@ mod tests {
     }
 
     #[test]
+    fn test_rank_empty_query() {
+        let query: Vec<Vec<f32>> = vec![];
+        let docs = vec![("d1", vec![vec![1.0, 0.0]])];
+
+        let ranked = rank(&query, &docs);
+        assert_eq!(ranked[0].0, "d1");
+        assert_eq!(ranked[0].1, 0.0); // maxsim of empty query is 0
+    }
+
+    #[test]
     fn test_refine() {
         let candidates = vec![("d1", 0.5), ("d2", 0.9)]; // d2 has higher original
         let query = vec![vec![1.0, 0.0]];
@@ -126,5 +137,15 @@ mod tests {
         let refined = refine(&candidates, &query, &docs, 1.0);
         assert_eq!(refined[0].0, "d2");
     }
-}
 
+    #[test]
+    fn test_refine_missing_doc() {
+        let candidates = vec![("d1", 0.9), ("d2", 0.8)];
+        let query = vec![vec![1.0, 0.0]];
+        let docs = vec![("d1", vec![vec![1.0, 0.0]])]; // d2 missing
+
+        let refined = refine(&candidates, &query, &docs, 0.5);
+        assert_eq!(refined.len(), 1);
+        assert_eq!(refined[0].0, "d1");
+    }
+}

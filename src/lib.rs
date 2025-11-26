@@ -1,15 +1,18 @@
 //! # rank-refine
 //!
-//! Fast reranking for retrieval pipelines.
+//! Reranking algorithms for retrieval pipelines.
+//!
+//! Takes candidates from initial retrieval and re-scores them using
+//! more expensive methods.
 //!
 //! ## Modules
 //!
-//! | Module | Purpose | Notes |
-//! |--------|---------|-------|
-//! | [`matryoshka`] | Refine with MRL tail dimensions | Zero deps |
-//! | [`colbert`] | MaxSim late interaction | Zero deps |
-//! | [`crossencoder`] | Transformer scoring | Trait-based, BYOM |
-//! | [`simd`] | Vector ops (AVX2/NEON) | Auto-dispatch |
+//! | Module | Purpose |
+//! |--------|---------|
+//! | [`matryoshka`] | Refine using MRL tail dimensions |
+//! | [`colbert`] | MaxSim late interaction scoring |
+//! | [`crossencoder`] | Cross-encoder trait (BYOM) |
+//! | [`simd`] | Vector ops with AVX2/NEON dispatch |
 //!
 //! ## Pipeline
 //!
@@ -17,13 +20,7 @@
 //! Retrieve → Fuse (rank-fusion) → Refine (this crate) → Top-K
 //! ```
 //!
-//! ## Performance
-//!
-//! SIMD-accelerated on x86_64 (AVX2+FMA) and aarch64 (NEON):
-//! - **3×** faster dot/cosine operations
-//! - **3.8×** faster MaxSim scoring
-//!
-//! ## Quick Example
+//! ## Example
 //!
 //! ```rust
 //! use rank_refine::matryoshka;
