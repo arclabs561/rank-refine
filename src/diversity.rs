@@ -110,7 +110,7 @@ impl MmrConfig {
 ///
 /// # Arguments
 ///
-/// * `candidates` - `(id, relevance_score)` pairs, sorted by relevance descending
+/// * `candidates` - `(id, relevance_score)` pairs
 /// * `similarity` - Flattened row-major similarity matrix (n×n)
 /// * `config` - MMR configuration (lambda, k)
 ///
@@ -118,24 +118,38 @@ impl MmrConfig {
 ///
 /// Selected documents in MMR order (most relevant diverse first).
 ///
+/// # Complexity
+///
+/// O(k × n) where k = `config.k` and n = `candidates.len()`.
+///
 /// # Panics
 ///
-/// Panics if `similarity.len() != candidates.len() * candidates.len()`.
+/// Panics if `similarity.len() != candidates.len()²`.
 #[must_use]
 pub fn mmr<I: Clone>(
     candidates: &[(I, f32)],
     similarity: &[f32],
     config: MmrConfig,
 ) -> Vec<(I, f32)> {
+    try_mmr(candidates, similarity, config).expect("similarity matrix must be n×n")
+}
+
+/// Fallible version of [`mmr`]. Returns `Err` if similarity matrix is wrong size.
+pub fn try_mmr<I: Clone>(
+    candidates: &[(I, f32)],
+    similarity: &[f32],
+    config: MmrConfig,
+) -> Result<Vec<(I, f32)>, crate::RefineError> {
     let n = candidates.len();
-    assert_eq!(
-        similarity.len(),
-        n * n,
-        "similarity matrix must be n×n where n = candidates.len()"
-    );
+    if similarity.len() != n * n {
+        return Err(crate::RefineError::DimensionMismatch {
+            expected: n * n,
+            got: similarity.len(),
+        });
+    }
 
     if n == 0 || config.k == 0 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
     // Normalize relevance scores to [0, 1] for fair comparison with similarity
@@ -193,10 +207,10 @@ pub fn mmr<I: Clone>(
     }
 
     // Return in selection order with original scores
-    selected_indices
+    Ok(selected_indices
         .into_iter()
         .map(|idx| candidates[idx].clone())
-        .collect()
+        .collect())
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

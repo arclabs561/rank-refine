@@ -1,26 +1,67 @@
-//! Matryoshka refinement using tail dimensions.
+//! Two-stage retrieval using Matryoshka embeddings.
 //!
-//! MRL (Matryoshka Representation Learning) embeddings have a useful property:
-//! the first k dimensions form a valid coarse embedding. This enables two-stage
-//! retrieval:
+//! # What Are Matryoshka Embeddings?
 //!
-//! 1. **Coarse**: Search using first k dims (fast, cache-friendly)
-//! 2. **Refine**: Re-score top candidates using remaining dims (accurate)
+//! Like Russian nesting dolls, Matryoshka embeddings contain smaller valid
+//! embeddings inside them. The first 64 dimensions form a complete (if less
+//! accurate) embedding. So do the first 128, 256, etc.
 //!
-//! ## Example
+//! This is achieved during training by applying the loss function at multiple
+//! dimension checkpoints, forcing the model to pack the most important
+//! information into earlier dimensions.
+//!
+//! **Paper**: [Matryoshka Representation Learning](https://arxiv.org/abs/2205.13147)
+//! (Kusupati et al., 2022)
+//!
+//! # How This Module Uses It
+//!
+//! We split each embedding into "head" (first k dims) and "tail" (remaining dims):
+//!
+//! ```text
+//! Full embedding: [████████████████████████████████]
+//!                  ↑ head (coarse) ↑   ↑  tail (fine details)  ↑
+//! ```
+//!
+//! 1. **Stage 1 (Coarse)**: Your vector DB searches using head dimensions only
+//! 2. **Stage 2 (Refine)**: This module re-scores candidates using tail dimensions
+//!
+//! The tail dimensions contain fine-grained information that can disambiguate
+//! between candidates that looked similar in the coarse search.
+//!
+//! # Example
 //!
 //! ```rust
 //! use rank_refine::matryoshka;
 //!
+//! // Candidates from Stage 1 (coarse search)
 //! let candidates = vec![("d1", 0.9), ("d2", 0.8)];
+//!
+//! // Full embeddings (head_dims=2 means dims 0-1 are head, dims 2-3 are tail)
 //! let query = vec![0.1, 0.2, 0.3, 0.4];
 //! let docs = vec![
-//!     ("d1", vec![0.1, 0.2, 0.35, 0.45]),
-//!     ("d2", vec![0.1, 0.2, 0.29, 0.39]),
+//!     ("d1", vec![0.1, 0.2, 0.35, 0.45]),  // tail: [0.35, 0.45]
+//!     ("d2", vec![0.1, 0.2, 0.29, 0.39]),  // tail: [0.29, 0.39]
 //! ];
 //!
+//! // Refine using tail dimensions
 //! let refined = matryoshka::refine(&candidates, &query, &docs, 2);
+//! // d2 might now rank higher if its tail matches query's tail better
 //! ```
+//!
+//! # The Alpha Parameter
+//!
+//! The `alpha` parameter controls how much weight to give the original score
+//! vs the tail similarity:
+//!
+//! ```text
+//! final_score = alpha × original_score + (1 - alpha) × tail_similarity
+//! ```
+//!
+//! - `alpha = 1.0`: Use original scores only (no refinement)
+//! - `alpha = 0.5`: Equal blend (default)
+//! - `alpha = 0.0`: Use tail similarity only
+//!
+//! See [`REFERENCE.md`](https://github.com/your-repo/REFERENCE.md) for mathematical details.
 
 use crate::{simd, RefineConfig, RefineError, Result};
 use std::collections::HashMap;
@@ -261,6 +302,65 @@ mod tests {
         )
         .unwrap();
         assert_eq!(refined.len(), 2);
+    }
+
+    /// Verifies that tail dimensions provide discriminative power.
+    ///
+    /// Two documents look identical in head dimensions but differ in tail.
+    /// Refinement should distinguish them.
+    #[test]
+    fn test_tail_dims_provide_discrimination() {
+        // Head dims: [1.0, 0.0, 0.0, 0.0] - identical for both docs
+        // Tail dims: doc_a=[0.0, 0.0, 0.0, 0.0], doc_b=[1.0, 0.0, 0.0, 0.0]
+        // Query tail: [1.0, 0.0, 0.0, 0.0] - matches doc_b
+
+        let candidates = vec![
+            ("doc_a", 0.5), // tied in head-only scoring
+            ("doc_b", 0.5), // tied in head-only scoring
+        ];
+
+        let query = vec![
+            1.0, 0.0, 0.0, 0.0, // head (dims 0-3)
+            1.0, 0.0, 0.0, 0.0, // tail (dims 4-7) - matches doc_b
+        ];
+
+        let docs = vec![
+            (
+                "doc_a",
+                vec![
+                    1.0, 0.0, 0.0, 0.0, // head - identical
+                    0.0, 0.0, 0.0, 0.0, // tail - different
+                ],
+            ),
+            (
+                "doc_b",
+                vec![
+                    1.0, 0.0, 0.0, 0.0, // head - identical
+                    1.0, 0.0, 0.0, 0.0, // tail - matches query
+                ],
+            ),
+        ];
+
+        // With tail-only refinement, doc_b should win
+        let refined = refine_tail_only(&candidates, &query, &docs, 4);
+        assert_eq!(
+            refined[0].0, "doc_b",
+            "Tail should discriminate: doc_b matches query tail"
+        );
+        assert!(
+            refined[0].1 > refined[1].1,
+            "doc_b score {} should be > doc_a score {}",
+            refined[0].1,
+            refined[1].1
+        );
+
+        // Verify the tail similarity difference is significant
+        let score_diff = refined[0].1 - refined[1].1;
+        assert!(
+            score_diff > 0.9,
+            "Score difference {} should be large (orthogonal vs identical)",
+            score_diff
+        );
     }
 }
 

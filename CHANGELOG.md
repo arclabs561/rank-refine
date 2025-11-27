@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.7.20] - 2025-11-27
+
+### Added
+- `try_mmr`: Fallible version of MMR that returns `Result` instead of panicking
+- Complexity docs (`# Complexity` sections) for key functions
+- Behavior notes for SIMD functions on mismatched vector lengths
+
+### Changed
+- Improved documentation with `# Complexity` and `# Note` sections
+
 ## [0.7.19] - 2025-11-27
 
 ### Added

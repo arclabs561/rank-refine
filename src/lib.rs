@@ -94,7 +94,7 @@ pub mod prelude {
     pub use crate::crossencoder::CrossEncoderModel;
 
     // Diversity reranking
-    pub use crate::diversity::{mmr, mmr_cosine, MmrConfig};
+    pub use crate::diversity::{mmr, mmr_cosine, try_mmr, MmrConfig};
 
     // Utilities
     pub use crate::{as_slices, RefineError};

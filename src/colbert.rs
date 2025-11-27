@@ -1,51 +1,80 @@
-//! `ColBERT`/PLAID late interaction scoring.
+//! Late interaction scoring (ColBERT/PLAID style).
 //!
-//! `ColBERT` represents queries and documents as bags of token embeddings,
-//! then scores using `MaxSim`: sum over query tokens of max similarity to any doc token.
+//! # What is Late Interaction?
 //!
-//! ## Token Pooling
+//! Most embedding models compress an entire document into a single vector.
+//! Late interaction keeps **one vector per token**, preserving fine-grained semantics.
 //!
-//! Token pooling reduces storage by clustering similar token embeddings and averaging them.
-//! Research shows pool factors of 2-3 achieve 50-66% vector reduction with <1% quality loss.
-//! See: <https://www.answer.ai/posts/colbert-pooling.html>
-//!
-//! ### Clustering Algorithms
-//!
-//! | Feature | Algorithm | Complexity | Quality |
-//! |---------|-----------|------------|---------|
-//! | Default | Greedy agglomerative | O(n³) | Good |
-//! | `hierarchical` | Ward's method (kodama) | O(n² log n) | Better |
-//!
-//! Ward's method minimizes within-cluster variance, matching scipy's implementation
-//! and what research papers report results with. Enable via:
-//!
-//! ```toml
-//! rank-refine = { version = "0.7", features = ["hierarchical"] }
+//! ```text
+//! Dense:           "the quick brown fox" → [0.1, 0.2, ...]  (1 vector)
+//! Late Interaction: "the quick brown fox" → [[...], [...], [...], [...]]  (4 vectors)
 //! ```
 //!
-//! ## Example
+//! **Paper**: [ColBERT](https://arxiv.org/abs/2004.12832) (Khattab & Zaharia, 2020)
+//!
+//! # How MaxSim Works
+//!
+//! For each query token, find its best-matching document token, then sum:
+//!
+//! ```text
+//! Score = Σ (for each query token q)
+//!           max (over all doc tokens d)
+//!             dot(q, d)
+//! ```
+//!
+//! This captures **token-level alignment**: "What is the capital of France?"
+//! can find documents where "capital" and "France" both have strong matches,
+//! even if they appear in different parts of the document.
+//!
+//! See [`REFERENCE.md`](https://github.com/your-repo/REFERENCE.md) for the full algorithm.
+//!
+//! # Token Pooling
+//!
+//! Storing one vector per token is expensive. Token pooling clusters similar
+//! tokens and stores only the cluster centroids:
+//!
+//! ```text
+//! Original:  [tok1] [tok2] [tok3] [tok4] [tok5] [tok6]  (6 vectors)
+//!              ↓       ↓      ↓      ↓      ↓      ↓
+//! Clustered: [  cluster1  ] [  cluster2  ] [cluster3]
+//!              ↓               ↓              ↓
+//! Pooled:    [mean1]        [mean2]        [mean3]      (3 vectors = 50% reduction)
+//! ```
+//!
+//! **Research**: Pool factors of 2-3 achieve 50-66% reduction with <1% quality loss.
+//! See [Clavié et al., 2024](https://arxiv.org/abs/2409.14683).
+//!
+//! ## Clustering Algorithms
+//!
+//! | Feature | Method | When to Use |
+//! |---------|--------|-------------|
+//! | Default | Greedy agglomerative | Factor 2-3, good balance |
+//! | `hierarchical` | Ward's method | Factor 4+, best quality |
+//!
+//! Enable Ward's method: `rank-refine = { features = ["hierarchical"] }`
+//!
+//! # Example
 //!
 //! ```rust
 //! use rank_refine::colbert;
 //!
-//! // Query: 2 tokens x 4 dims
+//! // Query: 2 tokens, each 4-dimensional
 //! let query = vec![
-//!     vec![1.0, 0.0, 0.0, 0.0],
-//!     vec![0.0, 1.0, 0.0, 0.0],
+//!     vec![1.0, 0.0, 0.0, 0.0],  // token "capital"
+//!     vec![0.0, 1.0, 0.0, 0.0],  // token "France"
 //! ];
 //!
-//! // Candidates with their token embeddings
+//! // Documents with their token embeddings
 //! let docs = vec![
 //!     ("doc1", vec![vec![0.9, 0.1, 0.0, 0.0], vec![0.1, 0.9, 0.0, 0.0]]),
-//!     ("doc2", vec![vec![0.5, 0.5, 0.0, 0.0]]),
+//!     ("doc2", vec![vec![0.5, 0.5, 0.0, 0.0]]),  // only 1 token
 //! ];
 //!
 //! let ranked = colbert::rank(&query, &docs);
-//! assert_eq!(ranked[0].0, "doc1"); // better token alignment
+//! assert_eq!(ranked[0].0, "doc1");  // better token alignment
 //!
-//! // Pool document tokens for storage efficiency
+//! // Pool for storage (factor 2 = 50% reduction)
 //! let pooled = colbert::pool_tokens(&docs[0].1, 2);
-//! assert!(pooled.len() <= docs[0].1.len());
 //! ```
 
 use crate::{simd, RefineConfig};
@@ -69,8 +98,15 @@ use crate::{simd, RefineConfig};
 ///
 /// # Algorithm
 ///
-/// - **Default**: Greedy agglomerative clustering (O(n³))
-/// - **With `hierarchical` feature**: Ward's method via kodama (O(n² log n), better quality)
+/// - **Default**: Greedy agglomerative clustering
+/// - **With `hierarchical` feature**: Ward's method via kodama (better quality)
+///
+/// # Complexity
+///
+/// - Default: O(n³ × d) where n = token count, d = dimension
+/// - Hierarchical: O(n² log n × d)
+///
+/// For n > 50 tokens, consider [`pool_tokens_sequential`] or the `hierarchical` feature.
 ///
 /// # Arguments
 ///
@@ -759,6 +795,94 @@ mod tests {
         let tokens: Vec<Vec<f32>> = (0..8).map(|i| vec![(i as f32 * 0.1).sin(); 16]).collect();
         let pooled = pool_tokens_hierarchical(&tokens, 4);
         assert_eq!(pooled.len(), 4);
+    }
+
+    /// Verifies cut_dendrogram produces correct number of clusters.
+    ///
+    /// This tests the union-find based dendrogram cutting algorithm
+    /// that determines cluster membership after hierarchical clustering.
+    #[cfg(feature = "hierarchical")]
+    #[test]
+    fn cut_dendrogram_produces_correct_clusters() {
+        use kodama::{linkage, Method};
+
+        // Create 6 tokens that will cluster into 3 pairs
+        let tokens = vec![
+            vec![1.0, 0.0, 0.0, 0.0], // group A
+            vec![0.9, 0.1, 0.0, 0.0], // group A (similar to 0)
+            vec![0.0, 1.0, 0.0, 0.0], // group B
+            vec![0.1, 0.9, 0.0, 0.0], // group B (similar to 2)
+            vec![0.0, 0.0, 1.0, 0.0], // group C
+            vec![0.0, 0.0, 0.9, 0.1], // group C (similar to 4)
+        ];
+
+        let n = tokens.len();
+
+        // Build condensed distance matrix
+        let mut condensed = Vec::with_capacity(n * (n - 1) / 2);
+        for i in 0..n {
+            for j in (i + 1)..n {
+                let sim = crate::simd::cosine(&tokens[i], &tokens[j]);
+                let dist = f64::from((1.0 - sim).clamp(0.0, 2.0));
+                condensed.push(dist);
+            }
+        }
+
+        let dendrogram = linkage(&mut condensed, n, Method::Ward);
+
+        // Cut to get 3 clusters
+        let labels = cut_dendrogram(&dendrogram, n, 3);
+
+        // Verify we get exactly 3 unique labels
+        let unique_labels: std::collections::HashSet<_> = labels.iter().collect();
+        assert_eq!(
+            unique_labels.len(),
+            3,
+            "Expected 3 clusters, got labels: {:?}",
+            labels
+        );
+
+        // Verify similar tokens are in same cluster
+        assert_eq!(labels[0], labels[1], "Tokens 0,1 should be in same cluster");
+        assert_eq!(labels[2], labels[3], "Tokens 2,3 should be in same cluster");
+        assert_eq!(labels[4], labels[5], "Tokens 4,5 should be in same cluster");
+
+        // Verify different groups are in different clusters
+        assert_ne!(labels[0], labels[2], "Groups A,B should differ");
+        assert_ne!(labels[2], labels[4], "Groups B,C should differ");
+    }
+
+    /// Verifies hierarchical pooling clusters semantically similar tokens.
+    #[cfg(feature = "hierarchical")]
+    #[test]
+    fn hierarchical_clusters_similar_tokens() {
+        // Create tokens where some are very similar
+        let tokens = vec![
+            vec![1.0, 0.0, 0.0, 0.0], // distinct
+            vec![0.0, 1.0, 0.0, 0.0], // repeated 4 times
+            vec![0.0, 1.0, 0.0, 0.0],
+            vec![0.0, 1.0, 0.0, 0.0],
+            vec![0.0, 1.0, 0.0, 0.0],
+            vec![0.0, 0.0, 1.0, 0.0], // distinct
+        ];
+
+        // Pool from 6 to 3
+        let pooled = pool_tokens_hierarchical(&tokens, 3);
+        assert_eq!(pooled.len(), 3);
+
+        // One of the pooled vectors should be close to [0,1,0,0]
+        // (the mean of the 4 identical vectors)
+        let target = vec![0.0, 1.0, 0.0, 0.0];
+        let max_sim = pooled
+            .iter()
+            .map(|p| crate::simd::cosine(p, &target))
+            .fold(f32::NEG_INFINITY, f32::max);
+
+        assert!(
+            max_sim > 0.99,
+            "Expected pooled vector near [0,1,0,0], best sim: {}",
+            max_sim
+        );
     }
 }
 

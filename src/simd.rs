@@ -19,6 +19,11 @@ const MIN_DIM_SIMD: usize = 16;
 ///
 /// If vectors have different lengths, uses the shorter length.
 /// Returns 0.0 for empty vectors.
+///
+/// # Note
+///
+/// Mismatched lengths are silently handled by truncating to the shorter.
+/// If you need exact dimension matching, check lengths first.
 #[inline]
 #[must_use]
 pub fn dot(a: &[f32], b: &[f32]) -> f32 {

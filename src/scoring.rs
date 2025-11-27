@@ -1,42 +1,39 @@
-//! Scoring traits for retrieval refinement.
+//! Scoring traits and utilities.
 //!
-//! This module provides a mathematical taxonomy of scoring functions:
+//! # Overview
 //!
-//! ## Taxonomy
+//! This module provides traits for different scoring strategies. The key insight
+//! is that there are three main ways to score query-document similarity, each
+//! with different trade-offs:
 //!
-//! | Trait | Representation | Formula | Symmetry |
-//! |-------|----------------|---------|----------|
-//! | [`Scorer`] | Dense (1 vector) | `q · d` | Symmetric |
-//! | [`TokenScorer`] | Multi-vector (N tokens) | `Σᵢ maxⱼ(Qᵢ · Dⱼ)` | Asymmetric |
-//! | [`CrossEncoderModel`](crate::crossencoder::CrossEncoderModel) | Raw text | `NN([q; d])` | Asymmetric |
+//! | Method | Speed | Quality | Storage |
+//! |--------|-------|---------|---------|
+//! | **Dense** | Fastest | Good | 1 vector/doc |
+//! | **MaxSim** | Medium | Better | N vectors/doc |
+//! | **Cross-encoder** | Slowest | Best | No pre-compute |
 //!
-//! ## Mathematical Properties
+//! # The Retrieval Pipeline
 //!
-//! **Dense scoring** (`Scorer`):
-//! - Models `f(q, d) = sim(E(q), E(d))` where E is an encoder
-//! - **Symmetric**: `score(q, d) = score(d, q)` for dot/cosine
-//! - **Bounded**: Cosine ∈ \[-1, 1\], dot unbounded
-//!
-//! **Late interaction** (`TokenScorer`, MaxSim):
-//! - Models `f(Q, D) = Σᵢ maxⱼ(Qᵢ · Dⱼ)` (sum of max similarities)
-//! - **Asymmetric**: Query tokens seek best doc matches, not vice versa
-//! - **Complexity**: O(M × N × d) where M=query tokens, N=doc tokens
-//! - **Advantage**: Preserves token-level semantics lost in dense pooling
-//!
-//! ## When to Use What
+//! A typical search pipeline uses all three in sequence:
 //!
 //! ```text
-//! ┌─────────────┐   Millions    ┌─────────────┐   100-1000   ┌─────────────┐
-//! │   Dense     │ ──────────▶  │   MaxSim    │ ──────────▶  │Cross-Encoder│
-//! │  (recall)   │  candidates  │ (precision) │    top-K     │ (accuracy)  │
-//! └─────────────┘              └─────────────┘              └─────────────┘
+//! 10M docs          1000 candidates       100 candidates       10 results
+//!     │                   │                     │                  │
+//!     ▼                   ▼                     ▼                  ▼
+//! ┌────────┐         ┌────────┐           ┌────────────┐     ┌─────────┐
+//! │ Dense  │ ──────▶ │ MaxSim │ ────────▶ │   Cross-   │ ──▶ │  User   │
+//! │  ANN   │         │ rerank │           │  Encoder   │     │         │
+//! └────────┘         └────────┘           └────────────┘     └─────────┘
+//!   (fast)            (precise)            (accurate)
 //! ```
 //!
-//! - **Dense**: Fast retrieval from large corpus (ANN-friendly)
-//! - **MaxSim**: Precise reranking of candidates (token alignment)
-//! - **Cross-encoder**: Final refinement when quality > speed
+//! # When to Use What
 //!
-//! ## Example
+//! - **Dense (`Scorer`)**: First-stage retrieval, millions of candidates
+//! - **MaxSim (`TokenScorer`)**: Reranking 100-1000 candidates from dense search
+//! - **Cross-encoder**: Final top-10 refinement when quality matters most
+//!
+//! # Example
 //!
 //! ```rust
 //! use rank_refine::scoring::{DenseScorer, Scorer};
@@ -44,6 +41,8 @@
 //! let scorer = DenseScorer::Cosine;
 //! let score = scorer.score(&[1.0, 0.0], &[0.9, 0.1]);
 //! ```
+//!
+//! See [`REFERENCE.md`](https://github.com/your-repo/REFERENCE.md) for mathematical details.
 
 use crate::simd;
 
