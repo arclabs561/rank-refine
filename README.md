@@ -67,6 +67,25 @@ use rank_refine::colbert::{maxsim, rank};
 let score = maxsim(&query_tokens, &doc_tokens);
 ```
 
+Note: `maxsim(Q, D) ≠ maxsim(D, Q)` — argument order matters.
+
+### TokenIndex
+
+Pre-compute embeddings for repeated scoring:
+
+```rust
+use rank_refine::colbert::TokenIndex;
+
+// Build index once
+let index = TokenIndex::new(vec![
+    ("doc1", vec![vec![1.0, 0.0], vec![0.0, 1.0]]),
+    ("doc2", vec![vec![0.5, 0.5]]),
+]);
+
+// Query many times
+let results = index.top_k(&query_tokens, 10);
+```
+
 ### Cross-encoder
 
 Implement the trait with your inference backend:

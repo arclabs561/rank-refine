@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.7.25] - 2025-11-27
+
+### Added
+- `TokenIndex`: Pre-computed token embeddings for repeated scoring
+  - `score_all`, `top_k`, `rank` methods
+  - Property tests for ordering, bounds, finite scores
+- Non-commutativity warning in `maxsim` documentation
+
+### Removed
+- Redundant `from_iter` method (use `FromIterator` trait instead)
+
 ## [0.7.24] - 2025-11-27
 
 ### Added
