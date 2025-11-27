@@ -23,6 +23,13 @@
 //!
 //! This crate scores embeddings — it doesn't care where they came from.
 //!
+//! # Assumptions
+//!
+//! - **L2-normalized vectors**: Most ColBERT models output unit-length embeddings.
+//!   With normalized vectors, dot product equals cosine similarity.
+//! - **Role markers applied during encoding**: `[Q]`/`[D]` tokens are added by
+//!   the encoder, not by this crate. We score the resulting embeddings.
+//!
 //! # How MaxSim Works
 //!
 //! For each query token, find its best-matching document token, then sum:

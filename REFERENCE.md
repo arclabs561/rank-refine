@@ -165,7 +165,10 @@ Quality loss measured on MS MARCO and BEIR benchmarks.
 **Ward's** (`hierarchical` feature): Minimize within-cluster variance.
 Better for factor 4+. Uses [kodama](https://docs.rs/kodama).
 
-Reference: [Clavié et al., 2024](https://arxiv.org/abs/2409.14683)
+**Note**: Tokens are generally evenly distributed across clusters, but this
+is not guaranteed — some clusters may contain more tokens than others.
+
+Reference: [Clavié et al., 2024](https://arxiv.org/abs/2409.14683), [Answer.AI blog](https://www.answer.ai/posts/colbert-pooling.html)
 
 ### Future: Token Importance Weighting
 
