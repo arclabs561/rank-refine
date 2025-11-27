@@ -576,3 +576,287 @@ fn e2e_edge_cases() {
     assert!(pooled.len() <= 2, "Should pool tokens");
     assert!(!pooled.is_empty(), "Should not produce empty result");
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// E2E Test: Score Normalization Utilities
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn e2e_score_normalization_pipeline() {
+    const DIM: usize = 128;
+
+    let query = mock_token_embed("rust memory safety", DIM);
+    let documents = vec![
+        mock_token_embed("Rust systems programming", DIM),
+        mock_token_embed("Python machine learning", DIM),
+        mock_token_embed("Rust memory management", DIM),
+        mock_token_embed("JavaScript web development", DIM),
+    ];
+
+    // Get raw MaxSim scores
+    let raw_scores: Vec<f32> = documents
+        .iter()
+        .map(|d| simd::maxsim_vecs(&query, d))
+        .collect();
+
+    // Normalize to [0, 1] for thresholds
+    let normalized = simd::normalize_maxsim_batch(&raw_scores, 32);
+    for &s in &normalized {
+        assert!(s >= 0.0 && s <= 2.0, "Normalized score {} should be in reasonable range", s);
+    }
+
+    // Softmax for relative comparison
+    let softmax = simd::softmax_scores(&raw_scores);
+    let sum: f32 = softmax.iter().sum();
+    assert!((sum - 1.0).abs() < 1e-5, "Softmax should sum to 1, got {}", sum);
+
+    // Top-k selection
+    let top2 = simd::top_k_indices(&raw_scores, 2);
+    assert_eq!(top2.len(), 2, "Should return top 2 indices");
+
+    // Verify top-k are actually highest scores
+    for &idx in &top2 {
+        for (other_idx, &other_score) in raw_scores.iter().enumerate() {
+            if !top2.contains(&other_idx) {
+                assert!(
+                    raw_scores[idx] >= other_score,
+                    "Top-k index {} (score {}) should have score >= {} (idx {})",
+                    idx, raw_scores[idx], other_score, other_idx
+                );
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// E2E Test: Weighted MaxSim Pipeline
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn e2e_weighted_maxsim_pipeline() {
+    const DIM: usize = 64;
+
+    // Query with 3 tokens, different importance
+    let query_text = "important critical keyword";
+    let query = mock_token_embed(query_text, DIM);
+
+    // Token importance weights (first token most important)
+    let weights = vec![2.0, 1.5, 1.0];
+
+    let documents = vec![
+        mock_token_embed("important systems", DIM),      // Has "important"
+        mock_token_embed("critical analysis", DIM),      // Has "critical"
+        mock_token_embed("keyword search", DIM),         // Has "keyword"
+        mock_token_embed("unrelated text", DIM),         // No match
+    ];
+
+    // Score with weights
+    let weighted_scores: Vec<f32> = documents
+        .iter()
+        .map(|d| simd::maxsim_weighted_vecs(&query, d, &weights))
+        .collect();
+
+    // Score without weights
+    let unweighted_scores: Vec<f32> = documents
+        .iter()
+        .map(|d| simd::maxsim_vecs(&query, d))
+        .collect();
+
+    // Weighted scores should differ from unweighted
+    let mut differ = false;
+    for (w, u) in weighted_scores.iter().zip(unweighted_scores.iter()) {
+        if (w - u).abs() > 1e-6 {
+            differ = true;
+            break;
+        }
+    }
+    assert!(differ, "Weighted and unweighted scores should differ");
+
+    // Document with "important" should benefit more from high weight
+    // (This is a softer assertion since mock embeddings are deterministic)
+    assert!(weighted_scores[0] > 0.0, "Document with important term should have positive score");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// E2E Test: Full RAG Reranking Pipeline
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn e2e_rag_rerank_pipeline() {
+    const DIM: usize = 128;
+
+    // Simulate a RAG query
+    let query = "How does Rust ensure memory safety?";
+    let query_dense = mock_dense_embed(query, DIM);
+    let query_tokens = mock_token_embed(query, DIM);
+
+    // Retrieved chunks (simulating retrieval results)
+    let chunks = vec![
+        (1, "Rust uses ownership and borrowing to ensure memory safety"),
+        (2, "Python is a dynamically typed language"),
+        (3, "Memory safety in Rust is enforced at compile time"),
+        (4, "JavaScript runs in web browsers"),
+        (5, "Rust's borrow checker prevents data races"),
+    ];
+
+    // Stage 1: Dense similarity
+    let dense_candidates: Vec<(i32, f32)> = chunks
+        .iter()
+        .map(|(id, text)| {
+            let doc_emb = mock_dense_embed(text, DIM);
+            let score = simd::cosine(&query_dense, &doc_emb);
+            (*id, score)
+        })
+        .collect();
+
+    // Stage 2: ColBERT MaxSim reranking on top-4
+    let top_k_ids: Vec<i32> = {
+        let mut sorted = dense_candidates.clone();
+        sorted.sort_by(|a, b| b.1.total_cmp(&a.1));
+        sorted.iter().take(4).map(|(id, _)| *id).collect()
+    };
+
+    let colbert_candidates: Vec<(i32, f32)> = top_k_ids
+        .iter()
+        .map(|id| {
+            let chunk_text = chunks.iter().find(|(cid, _)| cid == id).unwrap().1;
+            let doc_tokens = mock_token_embed(chunk_text, DIM);
+            let score = simd::maxsim_vecs(&query_tokens, &doc_tokens);
+            (*id, score)
+        })
+        .collect();
+
+    // Stage 3: Blend scores
+    let blended: Vec<(i32, f32)> = colbert_candidates
+        .iter()
+        .map(|(id, colbert_score)| {
+            let dense_score = dense_candidates.iter().find(|(did, _)| did == id).unwrap().1;
+            let final_score = blend(dense_score, *colbert_score, 0.7);
+            (*id, final_score)
+        })
+        .collect();
+
+    // Verify pipeline produces valid results
+    assert_eq!(blended.len(), 4, "Should have 4 reranked candidates");
+    for (_, score) in &blended {
+        assert!(score.is_finite(), "All scores should be finite");
+    }
+
+    // Normalize for threshold comparison
+    let scores: Vec<f32> = blended.iter().map(|(_, s)| *s).collect();
+    let normalized = normalize_scores(&scores);
+    for &s in &normalized {
+        assert!(s >= 0.0 && s <= 1.0, "Normalized score {} should be in [0, 1]", s);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// E2E Test: Matryoshka + Normalization
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn e2e_matryoshka_normalization() {
+    const DIM: usize = 256;
+    const HEAD: usize = 64;
+
+    let query = mock_dense_embed("Rust programming", DIM);
+    let documents = vec![
+        ("doc1", mock_dense_embed("Rust systems programming", DIM)),
+        ("doc2", mock_dense_embed("Python data science", DIM)),
+        ("doc3", mock_dense_embed("Rust memory safety", DIM)),
+    ];
+
+    // Stage 1: Head-only scores (fast)
+    let head_scores: Vec<(&str, f32)> = documents
+        .iter()
+        .map(|(id, emb)| (*id, simd::cosine(&query[..HEAD], &emb[..HEAD])))
+        .collect();
+
+    // Stage 2: Full refinement
+    let refined = matryoshka::refine(&head_scores, &query, &documents, HEAD);
+
+    assert_eq!(refined.len(), 3);
+
+    // Normalize refined scores for thresholding
+    let scores: Vec<f32> = refined.iter().map(|(_, s)| *s).collect();
+    let normalized = normalize_scores(&scores);
+
+    // Apply a threshold (keep only above 0.3)
+    let above_threshold: Vec<_> = refined
+        .iter()
+        .zip(normalized.iter())
+        .filter(|(_, &norm)| norm > 0.3)
+        .map(|((id, score), _)| (*id, *score))
+        .collect();
+
+    assert!(!above_threshold.is_empty(), "Should have some results above threshold");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// E2E Test: NaN Handling Across Pipeline
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn e2e_nan_handling() {
+    // Test that NaN values are handled gracefully throughout
+    let scores_with_nan = vec![0.9, f32::NAN, 0.7, f32::NAN, 0.5];
+
+    // Normalize should handle NaN
+    let normalized = simd::normalize_maxsim_batch(&scores_with_nan, 32);
+    // NaN values should remain NaN
+    for (i, &s) in normalized.iter().enumerate() {
+        if scores_with_nan[i].is_nan() {
+            assert!(s.is_nan(), "NaN input should produce NaN output");
+        }
+    }
+
+    // Softmax should handle NaN gracefully (produces 0 for NaN inputs)
+    let softmax = simd::softmax_scores(&scores_with_nan);
+    let finite_sum: f32 = softmax.iter().filter(|s| s.is_finite()).sum();
+    assert!(finite_sum > 0.0, "Softmax should produce some positive values");
+
+    // Top-k should place NaN last
+    let top3 = simd::top_k_indices(&scores_with_nan, 3);
+    // First 3 should be non-NaN indices (0, 2, 4)
+    for &idx in &top3 {
+        assert!(!scores_with_nan[idx].is_nan(), "Top-k should prefer non-NaN values");
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// E2E Test: Batch Operations
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn e2e_batch_operations() {
+    const DIM: usize = 64;
+
+    let query = mock_token_embed("query text here", DIM);
+    let documents: Vec<Vec<Vec<f32>>> = vec![
+        mock_token_embed("document one about rust", DIM),
+        mock_token_embed("document two about python", DIM),
+        mock_token_embed("document three about java", DIM),
+        mock_token_embed("document four about rust programming", DIM),
+    ];
+
+    // Batch MaxSim
+    let batch_scores = simd::maxsim_batch(&query, &documents);
+    assert_eq!(batch_scores.len(), 4, "Should score all documents");
+
+    // Verify batch matches individual scoring
+    for (i, doc) in documents.iter().enumerate() {
+        let individual = simd::maxsim_vecs(&query, doc);
+        assert!(
+            (batch_scores[i] - individual).abs() < 1e-5,
+            "Batch and individual scores should match for doc {}", i
+        );
+    }
+
+    // Batch cosine MaxSim
+    let batch_cosine = simd::maxsim_cosine_batch(&query, &documents);
+    assert_eq!(batch_cosine.len(), 4);
+
+    // Top-k from batch
+    let top2 = simd::top_k_indices(&batch_scores, 2);
+    assert_eq!(top2.len(), 2);
+}

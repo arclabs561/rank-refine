@@ -321,6 +321,134 @@ pub fn maxsim_cosine_batch(query: &[Vec<f32>], docs: &[Vec<Vec<f32>>]) -> Vec<f3
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Score normalization utilities
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Normalize a MaxSim score to approximately \[0, 1\].
+///
+/// MaxSim scores are unbounded: `score ∈ [0, query_token_count]`.
+/// This function divides by `query_maxlen` (typically 32 for ColBERT models)
+/// to produce comparable scores across different query lengths.
+///
+/// # Arguments
+///
+/// * `score` - Raw MaxSim score
+/// * `query_maxlen` - Maximum query length the model was trained with (typically 32)
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::simd::{maxsim, normalize_maxsim};
+///
+/// let q: Vec<&[f32]> = vec![&[1.0, 0.0], &[0.0, 1.0]];
+/// let d: Vec<&[f32]> = vec![&[0.9, 0.1]];
+/// let raw = maxsim(&q, &d);
+/// let normalized = normalize_maxsim(raw, 32);
+/// assert!(normalized <= 1.0);
+/// ```
+#[inline]
+#[must_use]
+pub fn normalize_maxsim(score: f32, query_maxlen: u32) -> f32 {
+    score / query_maxlen as f32
+}
+
+/// Softmax normalization for a batch of scores.
+///
+/// Transforms scores to a probability distribution that sums to 1.
+/// Useful for comparing candidates within a single query's result set.
+///
+/// Returns empty vec if input is empty or contains only non-finite values.
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::simd::softmax_scores;
+///
+/// let scores = vec![2.0, 1.0, 0.1];
+/// let probs = softmax_scores(&scores);
+/// let sum: f32 = probs.iter().sum();
+/// assert!((sum - 1.0).abs() < 1e-5);
+/// ```
+#[must_use]
+pub fn softmax_scores(scores: &[f32]) -> Vec<f32> {
+    if scores.is_empty() {
+        return Vec::new();
+    }
+
+    // Find max for numerical stability (only finite values)
+    let max_score = scores
+        .iter()
+        .copied()
+        .filter(|s| s.is_finite())
+        .fold(f32::NEG_INFINITY, f32::max);
+
+    if !max_score.is_finite() {
+        return vec![0.0; scores.len()];
+    }
+
+    // Compute exp(score - max) for stability
+    // NaN/Inf inputs contribute 0 to maintain sum = 1 for finite inputs
+    let exp_scores: Vec<f32> = scores
+        .iter()
+        .map(|s| {
+            if s.is_finite() {
+                (s - max_score).exp()
+            } else {
+                0.0 // NaN and Inf don't contribute
+            }
+        })
+        .collect();
+
+    let sum: f32 = exp_scores.iter().sum();
+    if sum == 0.0 {
+        return vec![0.0; scores.len()];
+    }
+
+    exp_scores.iter().map(|s| s / sum).collect()
+}
+
+/// Normalize a batch of MaxSim scores.
+///
+/// Convenience function that applies [`normalize_maxsim`] to each score.
+#[inline]
+#[must_use]
+pub fn normalize_maxsim_batch(scores: &[f32], query_maxlen: u32) -> Vec<f32> {
+    let divisor = query_maxlen as f32;
+    scores.iter().map(|s| s / divisor).collect()
+}
+
+/// Top-k selection from scores.
+///
+/// Returns indices of the k highest scores in descending order.
+/// Handles NaN by placing them last.
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::simd::top_k_indices;
+///
+/// let scores = vec![0.5, 0.9, 0.1, 0.7];
+/// let top2 = top_k_indices(&scores, 2);
+/// assert_eq!(top2, vec![1, 3]); // indices of 0.9 and 0.7
+/// ```
+#[must_use]
+pub fn top_k_indices(scores: &[f32], k: usize) -> Vec<usize> {
+    let mut indexed: Vec<(usize, f32)> = scores.iter().copied().enumerate().collect();
+    // Sort descending, NaN last
+    // total_cmp puts NaN at the end in ascending order, but we want descending
+    // So we reverse: finite values descending, then NaN
+    indexed.sort_by(|a, b| {
+        match (a.1.is_nan(), b.1.is_nan()) {
+            (true, true) => std::cmp::Ordering::Equal,
+            (true, false) => std::cmp::Ordering::Greater, // NaN goes last
+            (false, true) => std::cmp::Ordering::Less,    // NaN goes last
+            (false, false) => b.1.total_cmp(&a.1),        // Descending for finite
+        }
+    });
+    indexed.into_iter().take(k).map(|(i, _)| i).collect()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Portable fallback
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -776,6 +904,116 @@ mod tests {
         // Expected: 2.0*1.0 + 0.5*1.0 = 2.5
         assert!((score - 2.5).abs() < 1e-5);
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Score normalization tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn normalize_maxsim_basic() {
+        // Score of 16 with query_maxlen=32 should give 0.5
+        assert!((normalize_maxsim(16.0, 32) - 0.5).abs() < 1e-9);
+        assert!((normalize_maxsim(32.0, 32) - 1.0).abs() < 1e-9);
+        assert!((normalize_maxsim(0.0, 32) - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn normalize_maxsim_batch_basic() {
+        let scores = vec![16.0, 32.0, 8.0];
+        let normalized = normalize_maxsim_batch(&scores, 32);
+        assert!((normalized[0] - 0.5).abs() < 1e-9);
+        assert!((normalized[1] - 1.0).abs() < 1e-9);
+        assert!((normalized[2] - 0.25).abs() < 1e-9);
+    }
+
+    #[test]
+    fn softmax_scores_sums_to_one() {
+        let scores = vec![2.0, 1.0, 0.5, 0.1];
+        let probs = softmax_scores(&scores);
+        let sum: f32 = probs.iter().sum();
+        assert!(
+            (sum - 1.0).abs() < 1e-5,
+            "softmax should sum to 1, got {}",
+            sum
+        );
+    }
+
+    #[test]
+    fn softmax_scores_preserves_order() {
+        let scores = vec![3.0, 1.0, 2.0];
+        let probs = softmax_scores(&scores);
+        // Higher scores should have higher probabilities
+        assert!(probs[0] > probs[2]); // 3.0 > 2.0
+        assert!(probs[2] > probs[1]); // 2.0 > 1.0
+    }
+
+    #[test]
+    fn softmax_scores_empty() {
+        let probs = softmax_scores(&[]);
+        assert!(probs.is_empty());
+    }
+
+    #[test]
+    fn softmax_scores_single() {
+        let probs = softmax_scores(&[5.0]);
+        assert_eq!(probs.len(), 1);
+        assert!((probs[0] - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn softmax_scores_handles_nan() {
+        let scores = vec![f32::NAN, 1.0, 2.0];
+        let probs = softmax_scores(&scores);
+        // NaN input should produce 0 contribution (exp(-inf) -> 0)
+        assert!(probs[0].is_finite());
+        let sum: f32 = probs.iter().sum();
+        assert!((sum - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn softmax_scores_large_values_stable() {
+        // Numerical stability test: very large values shouldn't overflow
+        let scores = vec![1000.0, 1001.0, 999.0];
+        let probs = softmax_scores(&scores);
+        assert!(probs.iter().all(|p| p.is_finite()));
+        let sum: f32 = probs.iter().sum();
+        assert!((sum - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn top_k_indices_basic() {
+        let scores = vec![0.5, 0.9, 0.1, 0.7, 0.3];
+        let top2 = top_k_indices(&scores, 2);
+        assert_eq!(top2, vec![1, 3]); // 0.9 at idx 1, 0.7 at idx 3
+    }
+
+    #[test]
+    fn top_k_indices_with_ties() {
+        let scores = vec![0.5, 0.5, 0.5];
+        let top2 = top_k_indices(&scores, 2);
+        assert_eq!(top2.len(), 2);
+    }
+
+    #[test]
+    fn top_k_indices_k_larger_than_len() {
+        let scores = vec![0.5, 0.9];
+        let top5 = top_k_indices(&scores, 5);
+        assert_eq!(top5.len(), 2); // Can't return more than we have
+    }
+
+    #[test]
+    fn top_k_indices_with_nan() {
+        let scores = vec![0.5, f32::NAN, 0.9, 0.7];
+        let top2 = top_k_indices(&scores, 2);
+        // NaN should sort last, so top 2 are 0.9 and 0.7
+        assert_eq!(top2, vec![2, 3]);
+    }
+
+    #[test]
+    fn top_k_indices_empty() {
+        let top = top_k_indices(&[], 5);
+        assert!(top.is_empty());
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1080,6 +1318,117 @@ mod proptests {
 
             prop_assert_eq!(maxsim_weighted(&empty_q, &some_q, &weights), 0.0);
             prop_assert_eq!(maxsim_weighted(&some_q, &empty_d, &weights), 0.0);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // Normalization property tests
+        // ─────────────────────────────────────────────────────────────────────────
+
+        /// Softmax always sums to 1 (for non-empty finite inputs)
+        #[test]
+        fn softmax_sums_to_one(scores in proptest::collection::vec(-100.0f32..100.0, 1..20)) {
+            let probs = softmax_scores(&scores);
+            let sum: f32 = probs.iter().sum();
+            prop_assert!(
+                (sum - 1.0).abs() < 1e-5,
+                "softmax sum {} should be 1",
+                sum
+            );
+        }
+
+        /// Softmax preserves relative ordering
+        #[test]
+        fn softmax_preserves_order(scores in proptest::collection::vec(-10.0f32..10.0, 2..10)) {
+            let probs = softmax_scores(&scores);
+
+            // For each pair, if score[i] > score[j], then prob[i] > prob[j]
+            for i in 0..scores.len() {
+                for j in (i + 1)..scores.len() {
+                    if scores[i] > scores[j] {
+                        prop_assert!(
+                            probs[i] >= probs[j],
+                            "softmax should preserve order: score[{}]={} > score[{}]={}, but prob {} <= {}",
+                            i, scores[i], j, scores[j], probs[i], probs[j]
+                        );
+                    }
+                }
+            }
+        }
+
+        /// Softmax outputs are all in [0, 1]
+        #[test]
+        fn softmax_outputs_bounded(scores in proptest::collection::vec(-50.0f32..50.0, 1..15)) {
+            let probs = softmax_scores(&scores);
+            for (i, p) in probs.iter().enumerate() {
+                prop_assert!(
+                    *p >= 0.0 && *p <= 1.0,
+                    "softmax[{}] = {} should be in [0, 1]",
+                    i, p
+                );
+            }
+        }
+
+        /// Normalize is linear: normalize(a+b) = normalize(a) + normalize(b)
+        #[test]
+        fn normalize_is_linear(a in 0.0f32..100.0, b in 0.0f32..100.0, maxlen in 1u32..100) {
+            let sum_norm = normalize_maxsim(a + b, maxlen);
+            let norm_sum = normalize_maxsim(a, maxlen) + normalize_maxsim(b, maxlen);
+            // f32 precision limits require slightly larger tolerance
+            prop_assert!(
+                (sum_norm - norm_sum).abs() < 1e-5,
+                "normalize should be linear: {} vs {}",
+                sum_norm,
+                norm_sum
+            );
+        }
+
+        /// Top-k returns correct number of elements
+        #[test]
+        fn top_k_returns_correct_count(
+            scores in proptest::collection::vec(-100.0f32..100.0, 1..20),
+            k in 1usize..25
+        ) {
+            let result = top_k_indices(&scores, k);
+            let expected_len = k.min(scores.len());
+            prop_assert_eq!(
+                result.len(),
+                expected_len,
+                "top_k should return min(k, len)"
+            );
+        }
+
+        /// Top-k indices are valid
+        #[test]
+        fn top_k_indices_valid(
+            scores in proptest::collection::vec(-100.0f32..100.0, 1..20),
+            k in 1usize..25
+        ) {
+            let result = top_k_indices(&scores, k);
+            for idx in &result {
+                prop_assert!(
+                    *idx < scores.len(),
+                    "index {} should be < len {}",
+                    idx,
+                    scores.len()
+                );
+            }
+        }
+
+        /// Top-k returns unique indices
+        #[test]
+        fn top_k_indices_unique(
+            scores in proptest::collection::vec(-100.0f32..100.0, 1..20),
+            k in 1usize..25
+        ) {
+            let result = top_k_indices(&scores, k);
+            let mut seen = std::collections::HashSet::new();
+            for idx in &result {
+                prop_assert!(
+                    seen.insert(*idx),
+                    "index {} appears twice",
+                    idx
+                );
+            }
         }
     }
 }

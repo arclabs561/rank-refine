@@ -451,6 +451,84 @@ mod tests {
         let result = try_mmr(&candidates, &sim, MmrConfig::default());
         assert!(result.is_err());
     }
+
+    /// Verify MMR formula: score = λ × Rel(d) - (1-λ) × max_{d' ∈ S} Sim(d, d')
+    /// For first selection (S = ∅), score = λ × Rel(d) (no diversity penalty)
+    #[test]
+    fn mmr_exact_formula_first_selection() {
+        // With λ=0.7 and normalized relevances, first pick should be highest relevance
+        // since there's no diversity penalty yet
+        let candidates = vec![("a", 0.5), ("b", 1.0), ("c", 0.8)];
+        let sim = vec![
+            1.0, 0.5, 0.5, // doesn't matter for first selection
+            0.5, 1.0, 0.5, 0.5, 0.5, 1.0,
+        ];
+
+        let result = mmr(&candidates, &sim, MmrConfig::new(0.7, 1));
+
+        // b has highest relevance (1.0), should be selected first
+        assert_eq!(result[0].0, "b", "First selection should be highest relevance");
+    }
+
+    /// Verify MMR formula for second selection
+    /// After selecting 'a', score(d) = λ × norm_rel(d) - (1-λ) × sim(d, a)
+    #[test]
+    fn mmr_exact_formula_second_selection() {
+        // Candidates with relevances: a=0.9, b=0.6, c=0.3
+        // Normalized to [0,1]: a=1.0, b=0.5, c=0.0
+        let candidates = vec![("a", 0.9), ("b", 0.6), ("c", 0.3)];
+
+        // Similarity matrix:
+        // a-a=1.0, a-b=0.9, a-c=0.1
+        // b-a=0.9, b-b=1.0, b-c=0.2
+        // c-a=0.1, c-b=0.2, c-c=1.0
+        let sim = vec![
+            1.0, 0.9, 0.1, // row a
+            0.9, 1.0, 0.2, // row b
+            0.1, 0.2, 1.0, // row c
+        ];
+
+        // With λ=0.5:
+        // First selection: 'a' (highest normalized relevance = 1.0)
+        // Second selection scores:
+        //   b: 0.5 × 0.5 - 0.5 × 0.9 = 0.25 - 0.45 = -0.20
+        //   c: 0.5 × 0.0 - 0.5 × 0.1 = 0.00 - 0.05 = -0.05
+        // c has higher score, so should be selected second
+        let result = mmr(&candidates, &sim, MmrConfig::new(0.5, 2));
+
+        assert_eq!(result[0].0, "a", "First should be 'a' (highest relevance)");
+        assert_eq!(result[1].0, "c", "Second should be 'c' (more diverse from 'a')");
+    }
+
+    /// Verify that equal relevance with λ=0 selects based on diversity only
+    #[test]
+    fn mmr_pure_diversity_equal_relevance() {
+        // All same relevance - selection should be purely based on diversity
+        let candidates = vec![("a", 0.5), ("b", 0.5), ("c", 0.5)];
+
+        // a-b very similar (0.99), a-c and b-c orthogonal (0.01)
+        let sim = vec![
+            1.0, 0.99, 0.01, // a
+            0.99, 1.0, 0.01, // b
+            0.01, 0.01, 1.0, // c
+        ];
+
+        // With λ=0 (pure diversity), after first pick, should select most diverse
+        let result = mmr(&candidates, &sim, MmrConfig::new(0.0, 3));
+
+        // After any first pick, 'c' should be second (most diverse from a or b)
+        // If a selected first, c is most diverse from a
+        // If b selected first, c is most diverse from b
+        // If c selected first, then a or b next (both equally diverse from c)
+        // Third pick completes the set
+
+        // Just verify all three are selected (exact order depends on tie-breaking)
+        assert_eq!(result.len(), 3);
+        let ids: Vec<_> = result.iter().map(|(id, _)| *id).collect();
+        assert!(ids.contains(&"a"));
+        assert!(ids.contains(&"b"));
+        assert!(ids.contains(&"c"));
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

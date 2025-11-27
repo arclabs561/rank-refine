@@ -45,6 +45,9 @@ pub mod prelude {
     // Core SIMD functions
     pub use crate::simd::{cosine, dot, maxsim, norm};
 
+    // Score utilities
+    pub use crate::simd::{normalize_maxsim, softmax_scores, top_k_indices};
+
     // ColBERT
     pub use crate::colbert::{pool_tokens, rank as colbert_rank};
 

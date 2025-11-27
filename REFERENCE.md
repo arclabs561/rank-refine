@@ -67,6 +67,31 @@ def maxsim(Q, D):
 2. **Monotonic**: Adding doc tokens cannot decrease score
 3. **Permutation invariant**: Token order doesn't affect score
 
+### Score Normalization
+
+MaxSim scores are **unbounded**: $\text{score} \in [0, m]$ where $m$ is query token count.
+
+**To normalize to ~\[0, 1\]:**
+
+```rust
+let query_maxlen = 32; // Standard ColBERT default
+let normalized = maxsim(&q, &d) / query_maxlen as f32;
+```
+
+**For relative comparison** (comparing candidates for a single query):
+
+```rust
+// Softmax normalization - scores sum to 1
+let scores: Vec<f32> = docs.iter().map(|d| maxsim(&q, d)).collect();
+let max_score = scores.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+let exp_scores: Vec<f32> = scores.iter().map(|s| (s - max_score).exp()).collect();
+let sum: f32 = exp_scores.iter().sum();
+let normalized: Vec<f32> = exp_scores.iter().map(|s| s / sum).collect();
+```
+
+**Why 32?** ColBERT models are trained with `query_maxlen=32`. Even if your query has fewer
+tokens, normalizing by 32 keeps scores comparable across different query lengths.
+
 ---
 
 ## Token Pooling

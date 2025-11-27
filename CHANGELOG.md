@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.7.30] - 2025-11-27
+
+### Added
+- 6 new integration tests covering:
+  - Score normalization pipeline (`e2e_score_normalization_pipeline`)
+  - Weighted MaxSim pipeline (`e2e_weighted_maxsim_pipeline`)
+  - Full RAG reranking pipeline (`e2e_rag_rerank_pipeline`)
+  - Matryoshka + normalization (`e2e_matryoshka_normalization`)
+  - NaN handling across pipeline (`e2e_nan_handling`)
+  - Batch operations (`e2e_batch_operations`)
+- Test count: 217 unit + 16 integration + 21 doc = **254 total tests**
+
+## [0.7.29] - 2025-11-27
+
+### Added
+- **Score normalization utilities** (based on ColBERT best practices)
+  - `simd::normalize_maxsim(score, query_maxlen)` — normalize to ~\[0, 1\]
+  - `simd::normalize_maxsim_batch` — batch normalization
+  - `simd::softmax_scores` — softmax for relative comparison
+  - `simd::top_k_indices` — top-k selection with NaN handling
+- Added to prelude: `normalize_maxsim`, `softmax_scores`, `top_k_indices`
+- **REFERENCE.md**: Score normalization section with examples
+- 19 new tests for normalization utilities (unit + property tests)
+
 ## [0.7.28] - 2025-11-27
 
 ### Added
