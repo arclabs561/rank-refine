@@ -1014,6 +1014,112 @@ mod tests {
         let top = top_k_indices(&[], 5);
         assert!(top.is_empty());
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Mutation-killing tests (targeted to catch specific mutants)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn cosine_zero_norm_returns_zero() {
+        // Zero vector should return 0.0, not NaN or infinity
+        let zero = [0.0, 0.0, 0.0];
+        let nonzero = [1.0, 2.0, 3.0];
+        assert_eq!(cosine(&zero, &nonzero), 0.0);
+        assert_eq!(cosine(&nonzero, &zero), 0.0);
+        assert_eq!(cosine(&zero, &zero), 0.0);
+    }
+
+    #[test]
+    fn cosine_near_zero_norm_returns_zero() {
+        // Very small norm should also return 0.0
+        let tiny = [1e-10, 1e-10, 1e-10];
+        let nonzero = [1.0, 2.0, 3.0];
+        assert_eq!(cosine(&tiny, &nonzero), 0.0);
+    }
+
+    #[test]
+    fn cosine_at_threshold_boundary() {
+        // Test exactly at the 1e-9 threshold
+        // Vector with norm = 1e-9 should return 0
+        let at_threshold = [1e-9, 0.0, 0.0]; // norm = 1e-9
+        let nonzero = [1.0, 0.0, 0.0];
+        // Should be 0.0 because norm <= 1e-9
+        assert_eq!(cosine(&at_threshold, &nonzero), 0.0);
+
+        // Vector with norm > 1e-9 should return actual cosine
+        let above_threshold = [1e-8, 0.0, 0.0]; // norm = 1e-8 > 1e-9
+        let result = cosine(&above_threshold, &nonzero);
+        // Should be ~1.0 (parallel vectors)
+        assert!((result - 1.0).abs() < 0.1, "Above threshold should compute: {}", result);
+    }
+
+    #[test]
+    fn maxsim_cosine_vecs_not_one() {
+        // Verify maxsim_cosine_vecs returns actual score, not just 1.0
+        let query = vec![vec![1.0, 0.0, 0.0]];
+        let doc = vec![vec![0.0, 1.0, 0.0]]; // Orthogonal
+        let score = maxsim_cosine_vecs(&query, &doc);
+        assert!(score.abs() < 0.01, "Orthogonal vectors should have ~0 cosine, got {}", score);
+    }
+
+    #[test]
+    fn maxsim_cosine_vecs_matches_slice_version() {
+        let query = vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]];
+        let doc = vec![vec![1.0, 0.0, 0.0], vec![0.0, 1.0, 0.0]];
+
+        let q_refs: Vec<&[f32]> = query.iter().map(|v| v.as_slice()).collect();
+        let d_refs: Vec<&[f32]> = doc.iter().map(|v| v.as_slice()).collect();
+
+        let vec_score = maxsim_cosine_vecs(&query, &doc);
+        let slice_score = maxsim_cosine(&q_refs, &d_refs);
+
+        assert!((vec_score - slice_score).abs() < 1e-5,
+            "Vec and slice versions should match: {} vs {}", vec_score, slice_score);
+    }
+
+    #[test]
+    fn maxsim_cosine_weighted_empty_returns_zero() {
+        let empty_q: Vec<&[f32]> = vec![];
+        let empty_d: Vec<&[f32]> = vec![];
+        let some: Vec<&[f32]> = vec![&[1.0, 0.0]];
+        let weights = [1.0];
+
+        assert_eq!(maxsim_cosine_weighted(&empty_q, &some, &weights), 0.0);
+        assert_eq!(maxsim_cosine_weighted(&some, &empty_d, &weights), 0.0);
+    }
+
+    #[test]
+    fn dot_short_vector_uses_portable() {
+        // Vector shorter than MIN_DIM_SIMD should still work correctly
+        let short_a: Vec<f32> = (0..8).map(|i| i as f32).collect();
+        let short_b: Vec<f32> = (0..8).map(|i| (i + 1) as f32).collect();
+
+        let result = dot(&short_a, &short_b);
+        // Manual: 0*1 + 1*2 + 2*3 + 3*4 + 4*5 + 5*6 + 6*7 + 7*8 = 2+6+12+20+30+42+56 = 168
+        assert!((result - 168.0).abs() < 1e-3, "Short vector dot: {} != 168", result);
+    }
+
+    #[test]
+    fn dot_exactly_min_dim() {
+        // Test at exactly MIN_DIM_SIMD (16)
+        let a: Vec<f32> = (0..16).map(|i| i as f32).collect();
+        let b: Vec<f32> = vec![1.0; 16];
+
+        let result = dot(&a, &b);
+        // Sum of 0..15 = (15*16)/2 = 120
+        assert!((result - 120.0).abs() < 1e-3, "MIN_DIM dot: {} != 120", result);
+    }
+
+    #[test]
+    fn dot_mismatched_lengths() {
+        // Should use min(len_a, len_b)
+        let a = [1.0, 2.0, 3.0, 4.0, 5.0];
+        let b = [1.0, 1.0, 1.0];
+
+        let result = dot(&a, &b);
+        // Only uses first 3: 1+2+3 = 6
+        assert!((result - 6.0).abs() < 1e-5, "Mismatched len dot: {} != 6", result);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

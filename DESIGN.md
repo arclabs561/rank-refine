@@ -85,6 +85,13 @@ f(S \cup \{x\}) - f(S) \leq f(T \cup \{x\}) - f(T) \quad \text{for } T \subseteq
 
 If you've already selected similar items, a new item adds less marginal value.
 
+### Algorithms
+
+| Algorithm | Complexity | When to Use |
+|-----------|------------|-------------|
+| **MMR** | $O(k \cdot n)$ | General use, simple, fast |
+| **DPP** | $O(k \cdot n \cdot d)$ | Better theoretical diversity, small k |
+
 ### MMR (Maximal Marginal Relevance)
 
 Balances relevance and diversity:
@@ -97,9 +104,26 @@ Balances relevance and diversity:
 - $\lambda = 0.5$: balanced
 - $\lambda = 0$: maximum diversity
 
-**Complexity:** $O(k \cdot n)$ where $k$ is output size, $n$ is candidate size.
-
 **Greedy approximation:** MMR is greedy, not optimal. But greedy submodular maximization has a $(1 - 1/e) \approx 0.63$ approximation guarantee (Nemhauser et al., 1978).
+
+### DPP (Determinantal Point Process)
+
+Models joint diversity via matrix determinants. DPP assigns probability to subsets:
+
+```math
+P(S) \propto \det(L_S)
+```
+
+where $L$ is a kernel matrix combining quality and similarity.
+
+**Why DPP?** MMR penalizes similarity to **any** selected item equally. DPP considers **pairwise** interactions holistically, better capturing when items are "different in the same way."
+
+**Fast Greedy MAP:** Exact DPP is NP-hard. We use the greedy approximation:
+1. Select item maximizing $q_i \cdot \|v_i^\perp\|$ (quality × orthogonal component)
+2. Update residuals via Gram-Schmidt-style projection
+3. Repeat
+
+**Reference:** [Fast Greedy MAP Inference for DPP](https://papers.nips.cc/paper/7805-fast-greedy-map-inference-for-determinantal-point-process-to-improve-recommendation-diversity.pdf) (NeurIPS 2018)
 
 ## SIMD Implementation
 

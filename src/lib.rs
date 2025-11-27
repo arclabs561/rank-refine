@@ -21,8 +21,8 @@
 //! | Module | Purpose |
 //! |--------|---------|
 //! | [`simd`] | SIMD vector ops (dot, cosine, maxsim) |
-//! | [`colbert`] | Late interaction ranking, token pooling |
-//! | [`diversity`] | MMR diversity selection |
+//! | [`colbert`] | Late interaction (MaxSim), token pooling |
+//! | [`diversity`] | MMR + DPP diversity selection |
 //! | [`crossencoder`] | Cross-encoder trait |
 //! | [`matryoshka`] | MRL tail refinement |
 //!
@@ -52,7 +52,7 @@ pub mod prelude {
     pub use crate::colbert::{pool_tokens, rank as colbert_rank};
 
     // Diversity
-    pub use crate::diversity::{mmr, MmrConfig};
+    pub use crate::diversity::{dpp, mmr, DppConfig, MmrConfig};
 
     // Cross-encoder trait
     pub use crate::crossencoder::CrossEncoderModel;

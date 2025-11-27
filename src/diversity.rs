@@ -5,10 +5,17 @@
 //!
 //! # Algorithms
 //!
-//! | Function | Best For |
-//! |----------|----------|
-//! | [`mmr`] | General diversity-relevance tradeoff |
-//! | [`mmr_cosine`] | When you have raw embeddings |
+//! | Function | Best For | Complexity |
+//! |----------|----------|------------|
+//! | [`mmr`] | General use, simple | O(k × n) |
+//! | [`mmr_cosine`] | Raw embeddings | O(k × n × d) |
+//! | [`dpp`] | Better theoretical guarantees | O(k × n × d) |
+//!
+//! ## MMR vs DPP
+//!
+//! - **MMR**: Penalizes max similarity to already-selected items. Simple, fast.
+//! - **DPP**: Models joint diversity via determinants. Better for small k,
+//!   captures pairwise diversity more holistically.
 //!
 //! # Lambda Parameter Guide
 //!
@@ -335,6 +342,202 @@ pub fn mmr_cosine<I: Clone, V: AsRef<[f32]>>(
 
         let chosen = remaining.swap_remove(best_idx);
         selected_indices.push(chosen);
+    }
+
+    selected_indices
+        .into_iter()
+        .map(|idx| candidates[idx].clone())
+        .collect()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fast Greedy DPP
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Configuration for Determinantal Point Process (DPP) diversity selection.
+///
+/// # Alpha Parameter
+///
+/// `alpha` controls the relevance-diversity trade-off by scaling relevance scores
+/// before they're combined with diversity:
+///
+/// | Alpha | Effect |
+/// |-------|--------|
+/// | 0.0 | Pure diversity (ignore relevance) |
+/// | 1.0 | Balanced (default) |
+/// | 2.0+ | Strong relevance preference |
+///
+/// Internally, relevance is transformed as `exp(relevance × alpha)`, so:
+/// - Higher alpha amplifies score differences
+/// - At `alpha=0`, all items have equal quality weight
+#[derive(Debug, Clone, Copy)]
+pub struct DppConfig {
+    /// Number of results to select.
+    pub k: usize,
+    /// Relevance weight (higher = more weight on relevance vs diversity).
+    /// Default: 1.0. Range: \[0.0, ∞).
+    pub alpha: f32,
+}
+
+impl Default for DppConfig {
+    fn default() -> Self {
+        Self { k: 10, alpha: 1.0 }
+    }
+}
+
+impl DppConfig {
+    /// Create config with custom k and alpha.
+    #[must_use]
+    pub fn new(k: usize, alpha: f32) -> Self {
+        Self {
+            k,
+            alpha: alpha.max(0.0),
+        }
+    }
+
+    /// Set k (number of results to select).
+    #[must_use]
+    pub const fn with_k(mut self, k: usize) -> Self {
+        self.k = k;
+        self
+    }
+
+    /// Set alpha (relevance weight). Higher = more relevance, less diversity.
+    #[must_use]
+    pub fn with_alpha(mut self, alpha: f32) -> Self {
+        self.alpha = alpha.max(0.0);
+        self
+    }
+}
+
+/// Fast Greedy DPP diversity selection.
+///
+/// Uses the Fast Greedy MAP algorithm to select diverse items.
+/// DPP models diversity through the determinant of a kernel matrix,
+/// favoring sets where items are dissimilar.
+///
+/// # Algorithm
+///
+/// Unlike MMR which uses a simple max-similarity penalty, DPP considers
+/// the **joint** diversity of the selected set via orthogonality in
+/// embedding space.
+///
+/// # Arguments
+///
+/// * `candidates` - `(id, relevance_score)` pairs
+/// * `embeddings` - Embedding vectors (one per candidate)
+/// * `config` - DPP configuration
+///
+/// # Returns
+///
+/// Selected documents in DPP order.
+///
+/// # Complexity
+///
+/// O(k × n × d) where k = selected, n = candidates, d = embedding dim.
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::diversity::{dpp, DppConfig};
+///
+/// let candidates: Vec<(&str, f32)> = vec![
+///     ("doc1", 0.95),
+///     ("doc2", 0.90),
+///     ("doc3", 0.85),
+/// ];
+/// let embeddings: Vec<Vec<f32>> = vec![
+///     vec![1.0, 0.0, 0.0],
+///     vec![0.99, 0.1, 0.0], // Very similar to doc1
+///     vec![0.0, 0.0, 1.0],  // Orthogonal to doc1
+/// ];
+///
+/// let config = DppConfig::default().with_k(2);
+/// let selected = dpp(&candidates, &embeddings, config);
+///
+/// // DPP prefers orthogonal items
+/// assert_eq!(selected.len(), 2);
+/// ```
+///
+/// # References
+///
+/// - [Fast Greedy MAP Inference for DPP](https://papers.nips.cc/paper/7805-fast-greedy-map-inference-for-determinantal-point-process-to-improve-recommendation-diversity.pdf)
+/// - [DPP for ML](https://arxiv.org/abs/1207.6083)
+#[must_use]
+pub fn dpp<I: Clone, V: AsRef<[f32]>>(
+    candidates: &[(I, f32)],
+    embeddings: &[V],
+    config: DppConfig,
+) -> Vec<(I, f32)> {
+    let n = candidates.len();
+    assert_eq!(
+        embeddings.len(),
+        n,
+        "embeddings must have same length as candidates"
+    );
+
+    if n == 0 || config.k == 0 {
+        return Vec::new();
+    }
+
+    // Build quality scores (relevance scaled by alpha)
+    let qualities: Vec<f32> = candidates
+        .iter()
+        .map(|(_, r)| (r * config.alpha).exp())
+        .collect();
+
+    // Fast Greedy DPP: iteratively select item that maximizes log-det gain
+    let mut selected_indices: Vec<usize> = Vec::with_capacity(config.k.min(n));
+    let mut remaining: Vec<usize> = (0..n).collect();
+
+    // Track orthogonal components for efficient updates
+    // c[i] = ||v_i - proj_{selected}(v_i)||^2 (starts as ||v_i||^2)
+    let mut c: Vec<f32> = embeddings
+        .iter()
+        .map(|e| {
+            let v = e.as_ref();
+            simd::dot(v, v)
+        })
+        .collect();
+
+    // d[i][j] stores dot products needed for incremental updates
+    // We compute on-the-fly to save memory
+
+    for _ in 0..config.k.min(n) {
+        if remaining.is_empty() {
+            break;
+        }
+
+        // Find item with maximum quality * residual_norm
+        // This is the greedy approximation to max log-det
+        let mut best_idx = 0;
+        let mut best_score = f32::NEG_INFINITY;
+
+        for (pos, &cand_idx) in remaining.iter().enumerate() {
+            // DPP score: quality * sqrt(c[i]) where c[i] is residual norm squared
+            // Using sqrt for numerical stability
+            let score = qualities[cand_idx] * c[cand_idx].max(0.0).sqrt();
+
+            if score > best_score {
+                best_score = score;
+                best_idx = pos;
+            }
+        }
+
+        let chosen = remaining.swap_remove(best_idx);
+        selected_indices.push(chosen);
+
+        // Update residual norms for remaining items
+        // c[i] -= (v_i · v_chosen)^2 / c[chosen]
+        let chosen_emb = embeddings[chosen].as_ref();
+        let c_chosen = c[chosen].max(1e-9); // Avoid division by zero
+
+        for &idx in &remaining {
+            let v_i = embeddings[idx].as_ref();
+            let dot_product = simd::dot(v_i, chosen_emb);
+            c[idx] -= (dot_product * dot_product) / c_chosen;
+            c[idx] = c[idx].max(0.0); // Clamp to avoid negative from numerical error
+        }
     }
 
     selected_indices
@@ -675,5 +878,137 @@ mod proptests {
             let cosine_ids: std::collections::HashSet<_> = cosine_result.iter().map(|(id, _)| *id).collect();
             prop_assert_eq!(mmr_ids, cosine_ids);
         }
+
+        /// DPP with empty input returns empty output
+        #[test]
+        fn dpp_empty_returns_empty(k in 0usize..10) {
+            let candidates: Vec<(u32, f32)> = vec![];
+            let embeddings: Vec<Vec<f32>> = vec![];
+
+            let result = dpp(&candidates, &embeddings, DppConfig::default().with_k(k));
+            prop_assert!(result.is_empty());
+        }
+
+        /// DPP with k=0 returns empty output
+        #[test]
+        fn dpp_k_zero_returns_empty(n in 1usize..10) {
+            let candidates: Vec<(u32, f32)> = (0..n as u32)
+                .map(|i| (i, 0.5))
+                .collect();
+            let embeddings: Vec<Vec<f32>> = (0..n)
+                .map(|i| {
+                    let mut v = vec![0.0; 3];
+                    v[i % 3] = 1.0;
+                    v
+                })
+                .collect();
+
+            let result = dpp(&candidates, &embeddings, DppConfig::default().with_k(0));
+            prop_assert!(result.is_empty());
+        }
+
+        /// DPP selects at most k items
+        #[test]
+        fn dpp_selects_at_most_k(n in 2usize..10, k in 1usize..8) {
+            let candidates: Vec<(u32, f32)> = (0..n as u32)
+                .map(|i| (i, 0.5))
+                .collect();
+            let embeddings: Vec<Vec<f32>> = (0..n)
+                .map(|_| vec![1.0, 0.0, 0.0])
+                .collect();
+
+            let result = dpp(&candidates, &embeddings, DppConfig::default().with_k(k));
+            prop_assert!(result.len() <= k.min(n));
+        }
+
+        /// DPP prefers orthogonal items (high diversity)
+        #[test]
+        fn dpp_prefers_orthogonal(n in 3usize..6) {
+            // Create embeddings where first and second are similar, third is orthogonal
+            let mut embeddings: Vec<Vec<f32>> = vec![
+                vec![1.0, 0.0, 0.0],
+                vec![0.99, 0.1, 0.0], // Similar to first
+            ];
+            // Add orthogonal items
+            for i in 2..n {
+                let mut v = vec![0.0; 3];
+                v[i % 3] = 1.0;
+                embeddings.push(v);
+            }
+
+            let candidates: Vec<(u32, f32)> = (0..n as u32)
+                .map(|i| (i, 0.9 - i as f32 * 0.05)) // Decreasing relevance
+                .collect();
+
+            let result = dpp(&candidates, &embeddings, DppConfig::default().with_k(2));
+
+            // First item (highest quality) should be selected
+            prop_assert_eq!(result[0].0, 0);
+            // Second item should NOT be the similar one if there's an orthogonal alternative
+            if n > 2 {
+                prop_assert_ne!(result[1].0, 1, "DPP should prefer orthogonal over similar");
+            }
+        }
+
+        /// DPP with all equal embeddings doesn't crash
+        #[test]
+        fn dpp_equal_embeddings(n in 1usize..8) {
+            let candidates: Vec<(u32, f32)> = (0..n as u32)
+                .map(|i| (i, 1.0 - i as f32 * 0.1))
+                .collect();
+            let embeddings: Vec<Vec<f32>> = vec![vec![1.0, 0.0]; n]; // All identical
+
+            // Should not panic
+            let result = dpp(&candidates, &embeddings, DppConfig::default().with_k(n));
+            // Should still select something
+            prop_assert!(!result.is_empty() || n == 0);
+        }
+    }
+}
+
+#[cfg(test)]
+mod dpp_tests {
+    use super::*;
+
+    #[test]
+    fn dpp_orthogonal_prefers_diverse() {
+        // Three orthogonal vectors with high relevance
+        let candidates = vec![("a", 0.9), ("b", 0.85), ("c", 0.8)];
+        let embeddings = vec![
+            vec![1.0, 0.0, 0.0],
+            vec![0.0, 1.0, 0.0],
+            vec![0.0, 0.0, 1.0],
+        ];
+
+        let result = dpp(&candidates, &embeddings, DppConfig::default().with_k(3));
+        assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn dpp_similar_items_penalized() {
+        // a and b are nearly identical, c is orthogonal
+        let candidates = vec![("a", 0.95), ("b", 0.90), ("c", 0.85)];
+        let embeddings = vec![
+            vec![1.0, 0.0, 0.0],
+            vec![0.99, 0.1, 0.0], // Very similar to a
+            vec![0.0, 0.0, 1.0],  // Orthogonal to both
+        ];
+
+        let result = dpp(&candidates, &embeddings, DppConfig::default().with_k(2));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "a"); // Highest quality
+        // Second should be c (orthogonal) not b (similar)
+        assert_eq!(result[1].0, "c");
+    }
+
+    #[test]
+    fn dpp_config_alpha() {
+        // High alpha = more weight on relevance
+        let config = DppConfig::default().with_alpha(10.0);
+        assert_eq!(config.alpha, 10.0);
+
+        // Negative alpha clamped to 0
+        let config = DppConfig::default().with_alpha(-1.0);
+        assert_eq!(config.alpha, 0.0);
     }
 }

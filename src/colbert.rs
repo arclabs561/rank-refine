@@ -1,4 +1,4 @@
-//! Late interaction scoring (ColBERT/PLAID style).
+//! Late interaction scoring via MaxSim.
 //!
 //! # What is Late Interaction?
 //!
@@ -10,7 +10,18 @@
 //! Late Interaction: "the quick brown fox" → [[...], [...], [...], [...]]  (4 vectors)
 //! ```
 //!
-//! **Paper**: [ColBERT](https://arxiv.org/abs/2004.12832) (Khattab & Zaharia, 2020)
+//! # Supported Models
+//!
+//! MaxSim is **model-agnostic**. Any multi-vector encoder works:
+//!
+//! | Model | Input | Notes |
+//! |-------|-------|-------|
+//! | [ColBERT](https://arxiv.org/abs/2004.12832) | Text | Original late interaction |
+//! | [ColBERTv2](https://arxiv.org/abs/2112.01488) | Text | + residual compression |
+//! | [ColPali](https://arxiv.org/abs/2407.01449) | Document images | Vision-language, ICLR 2025 |
+//! | [Jina-ColBERT-v2](https://huggingface.co/jinaai/jina-colbert-v2) | Text | Multilingual + Matryoshka |
+//!
+//! This crate scores embeddings — it doesn't care where they came from.
 //!
 //! # How MaxSim Works
 //!
@@ -1186,6 +1197,23 @@ mod tests {
         let entries = index.into_entries();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].0, "doc1");
+    }
+
+    #[test]
+    fn token_index_entries_returns_slice() {
+        let index = TokenIndex::new(vec![
+            ("doc1", vec![vec![1.0, 0.0]]),
+            ("doc2", vec![vec![0.0, 1.0]]),
+        ]);
+
+        let entries = index.entries();
+        // Verify we get the actual entries, not an empty slice
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].0, "doc1");
+        assert_eq!(entries[1].0, "doc2");
+        // Verify embedding data is present
+        assert_eq!(entries[0].1.len(), 1);
+        assert_eq!(entries[0].1[0], vec![1.0, 0.0]);
     }
 
     #[test]

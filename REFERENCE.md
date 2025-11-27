@@ -92,6 +92,23 @@ let normalized: Vec<f32> = exp_scores.iter().map(|s| s / sum).collect();
 **Why 32?** ColBERT models are trained with `query_maxlen=32`. Even if your query has fewer
 tokens, normalizing by 32 keeps scores comparable across different query lengths.
 
+### Edge Cases
+
+| Case | Behavior | Note |
+|------|----------|------|
+| Empty query | Returns 0.0 | — |
+| Empty document | Returns 0.0 | — |
+| Single query token | Reduces to max(dot(q, d)) | No aggregation benefit |
+| Identical tokens | Sum of self-similarities | May inflate score |
+| All-padding query | Score reflects padding | Use `MaskedTokens` to exclude |
+
+### Out of Scope
+
+This crate **does not handle**:
+- **Tokenization** — Use your model's tokenizer
+- **Role markers** (`[Q]`/`[D]`) — Applied during encoding, not scoring
+- **Dimensionality reduction** — Pre-process before calling this crate
+
 ---
 
 ## Token Pooling

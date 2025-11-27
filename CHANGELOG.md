@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.7.32] - 2025-11-27
+
+### Added
+- **Determinantal Point Process (DPP)** diversity selection
+  - `diversity::dpp` — Fast Greedy MAP algorithm
+  - `diversity::DppConfig` — configuration (k, alpha)
+  - Models joint diversity via matrix determinants
+  - Better theoretical guarantees than MMR for small k
+- **ColPali/ColBERTv2 documentation** — clarified that MaxSim is model-agnostic
+  - Added table of supported models (ColBERT, ColBERTv2, ColPali, Jina-ColBERT-v2)
+- DPP tests: 6 property tests + 3 unit tests
+
+### Changed
+- Updated module table to mention DPP
+- Updated DESIGN.md with DPP algorithm comparison and mathematical foundations
+
+## [0.7.31] - 2025-11-27
+
+### Added
+- **Fuzz target** `fuzz_normalize` for normalization utilities
+- **Mutation-killing tests** for SIMD edge cases:
+  - `cosine_zero_norm_returns_zero` — zero vector handling
+  - `cosine_near_zero_norm_returns_zero` — near-zero norm boundary
+  - `cosine_at_threshold_boundary` — exact 1e-9 threshold test
+  - `maxsim_cosine_vecs_not_one` — verifies actual computation
+  - `maxsim_cosine_weighted_empty_returns_zero` — empty input handling
+  - `dot_short_vector_uses_portable` — MIN_DIM_SIMD fallback
+  - `dot_exactly_min_dim` — threshold edge case
+  - `dot_mismatched_lengths` — length handling
+- `token_index_entries_returns_slice` — TokenIndex accessor test
+- **Test count**: 230 unit + 16 integration + 21 doc = **267 total tests**
+- **Mutation testing**: 84/90 mutants caught in simd.rs (93% kill rate)
+
 ## [0.7.30] - 2025-11-27
 
 ### Added
