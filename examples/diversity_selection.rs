@@ -70,6 +70,8 @@ fn main() {
     println!("  ^ Note: top 3 are very similar (all Python async)");
 
     // MMR with lambda=0.5 (balanced)
+    // lambda: relevance weight. 1.0 = pure relevance, 0.0 = pure diversity
+    // MMR score = lambda * relevance - (1-lambda) * max_similarity_to_selected
     let mmr_config = MmrConfig::default().with_lambda(0.5).with_k(4);
     let mmr_results = mmr_cosine(&candidates, &embeddings, mmr_config);
 
@@ -88,6 +90,8 @@ fn main() {
     }
 
     // DPP (determinantal point process) - build similarity matrix
+    // DPP models diversity via matrix determinants: orthogonal items span
+    // more "volume" in embedding space, so get higher probability.
     let n = embeddings.len();
     let mut sim_matrix = vec![vec![0.0f32; n]; n];
     for i in 0..n {
@@ -96,6 +100,7 @@ fn main() {
         }
     }
 
+    // alpha: relevance-diversity tradeoff (0=pure diversity, 1=pure relevance)
     let dpp_config = DppConfig::default().with_alpha(0.5).with_k(4);
     let dpp_results = dpp(&candidates, &sim_matrix, dpp_config);
 
@@ -104,9 +109,8 @@ fn main() {
         println!("  {id}: {score:.3}");
     }
 
-    println!("\n=== Key Insight ===");
-    println!("Pure relevance: 3 Python async docs (redundant)");
-    println!("With diversity: Mix of Python, Rust, JS, Go (useful variety)");
+    // Note: Pure relevance gave 3 Python async docs (redundant).
+    // MMR/DPP selected across languages - better for users wanting breadth.
 }
 
 /// Simple embedding simulation (hash-based, deterministic)

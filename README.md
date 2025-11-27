@@ -50,12 +50,12 @@ let score = maxsim_vecs(&query_tokens, &doc_tokens);
 
 ### Token Pooling
 
-| Function | Compression | Quality |
-|----------|-------------|---------|
-| `pool_tokens(t, 2)` | 50% | ~0% loss |
-| `pool_tokens(t, 4)` | 75% | 2-5% loss |
-| `pool_tokens_adaptive(t, f)` | varies | auto-selects method |
-| `pool_tokens_with_protected(t, f, n)` | varies | preserves first n tokens |
+| Function | Tokens Kept | Notes |
+|----------|-------------|-------|
+| `pool_tokens(t, 2)` | 50% | Safe default |
+| `pool_tokens(t, 4)` | 25% | Use `hierarchical` feature |
+| `pool_tokens_adaptive(t, f)` | varies | Auto-selects greedy vs ward |
+| `pool_tokens_with_protected(t, f, n)` | varies | Keeps first n tokens unpooled |
 
 ### Diversity
 
@@ -93,13 +93,13 @@ $$\text{MMR} = \arg\max_d \left[ \lambda \cdot \text{rel}(d) - (1-\lambda) \cdot
 
 Cluster similar document tokens to reduce storage:
 
-| Factor | Storage Saved | Quality Loss |
-|--------|---------------|--------------|
-| 2 | 50% | ~0.1% |
-| 3 | 66% | ~0.8% |
-| 4 | 75% | ~2.1% |
+| Factor | Tokens Kept | MRR@10 Loss |
+|--------|-------------|-------------|
+| 2 | 50% | 0.1–0.3% |
+| 3 | 33% | 0.5–1.0% |
+| 4 | 25% | 1.5–3.0% |
 
-Quality loss measured on MS MARCO (Clavie et al., 2024).
+Numbers from MS MARCO dev (Clavie et al., 2024). Pooling merges similar tokens; it hurts when queries need to distinguish between them.
 
 ## Benchmarks
 
@@ -115,19 +115,13 @@ Apple M3 Max, `cargo bench`:
 | `maxsim` (pooled 2x) | 32q×64d×128dim | 25μs |
 | `maxsim` (pooled 4x) | 32q×32d×128dim | 12μs |
 
-## For Library Authors
+## Vendoring
 
-If you're building a vector database or search pipeline:
+If you prefer not to add a dependency:
 
-**Depend on it:**
-```toml
-rank-refine = "0.7"
-```
-
-**Or vendor the SIMD code:**
 - `src/simd.rs` is self-contained (~600 lines)
 - AVX2+FMA / NEON with portable fallback
-- No dependencies, copy-pasteable
+- No dependencies
 
 See [REFERENCE.md](REFERENCE.md) for algorithm details and edge cases.
 

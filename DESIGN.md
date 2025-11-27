@@ -201,14 +201,14 @@ Before:  [tok1] [tok2] [tok3] [tok4] [tok5] [tok6]  (6 vectors)
 After:   [mean(1,2)]  [tok3] [mean(4,5)] [tok6]    (4 vectors = 33% reduction)
 ```
 
-| Factor | Storage | Quality Loss | Notes |
-|--------|---------|--------------|-------|
-| 2x | 50% | ~0% | Safe default |
-| 3x | 33% | ~1% | Good trade-off |
-| 4x | 25% | 2-5% | Use `hierarchical` feature |
-| 8x | 12.5% | 5-10% | Storage-critical only |
+| Factor | Tokens Kept | MRR@10 Loss | Notes |
+|--------|-------------|-------------|-------|
+| 2x | 50% | 0.1–0.3% | Safe default |
+| 3x | 33% | 0.5–1.0% | Good trade-off |
+| 4x | 25% | 1.5–3.0% | Use `hierarchical` feature |
+| 8x | 12.5% | 5–10% | Storage-critical only |
 
-From Clavie et al. (2024). Quality loss measured on MS MARCO and BEIR.
+From Clavie et al. (2024) on MS MARCO dev. Results vary by document length and query type.
 
 **Methods:**
 - `pool_tokens`: Greedy agglomerative, $O(n^3 d)$
@@ -232,11 +232,11 @@ From Clavie et al. (2024). Quality loss measured on MS MARCO and BEIR.
 
 Before ColBERT, there was a frustrating dichotomy in neural IR:
 
-**Fast but weak:** Bi-encoders (dense retrieval) encode query and document independently, enabling fast ANN search. But they compress everything into one vector, losing fine-grained matching.
+**Bi-encoders (dense):** Encode query and document independently. Fast (ANN search works), but compresses everything into one vector.
 
-**Strong but slow:** Cross-encoders run a full transformer over concatenated query+document, achieving ~5x better MRR on MS MARCO. But they can't pre-compute anything—every query requires O(n) inference calls.
+**Cross-encoders:** Run a full transformer over concatenated query+document. Slower (can't pre-compute), but sees query-document interactions directly. About 5x better MRR@10 on MS MARCO (Nogueira & Cho, 2019).
 
-The gap was stark: cross-encoders were too slow for first-stage retrieval, and bi-encoders were too weak for final ranking.
+The practical gap: cross-encoders are too slow for first-stage retrieval over millions of docs, bi-encoders aren't precise enough for final ranking.
 
 ### Late Interaction: A Middle Path (2020)
 

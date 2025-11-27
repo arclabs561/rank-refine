@@ -1,7 +1,11 @@
 //! Two-stage retrieval with Matryoshka embeddings.
 //!
-//! Stage 1: Fast ANN search using first 64 dims (coarse)
-//! Stage 2: Refine using remaining dims (fine-grained)
+//! Matryoshka embeddings pack information hierarchically:
+//! - Early dims (0-64): broad topic (sports? science? cooking?)
+//! - Later dims (64+): finer distinctions, specific entities
+//!
+//! Stage 1: Fast ANN search using head dims (coarse filter)
+//! Stage 2: Re-score top candidates using tail dims (precise ranking)
 //!
 //! Run: `cargo run --example matryoshka_search`
 
@@ -49,9 +53,11 @@ fn main() {
     }
 
     // Stage 2: Refine using tail dimensions
+    // The tail (dims 64-128) contains finer-grained information that
+    // can break ties or correct ordering errors from the coarse search.
     let head_dims = 64;
 
-    // Default blend (50% coarse, 50% tail)
+    // Default blend (50% coarse score, 50% tail similarity)
     let refined = matryoshka::refine(&candidates, &query, &docs, head_dims);
 
     println!("\nStage 2 (refined, using tail dims):");

@@ -22,19 +22,20 @@ For getting started, see [README.md](README.md).
 
 ### Intuition
 
-Dense retrieval compresses an entire document into one vector. This works well for broad semantic similarity but loses fine-grained information. Late interaction keeps **one vector per token**, preserving the ability to match specific concepts.
+Dense retrieval compresses an entire document into one vector. Late interaction keeps **one vector per token**.
 
-```mermaid
-graph LR
-    subgraph Query
-        q1["q1"] --- q2["q2"] --- q3["q3"]
-    end
-    subgraph Document
-        d1["d1"] --- d2["d2"] --- d3["d3"] --- d4["d4"]
-    end
-    q1 -.->|max| d2
-    q2 -.->|max| d1
-    q3 -.->|max| d4
+Think of it like this: dense retrieval asks "is this document about the same topic?" Late interaction asks "does this document have good matches for each part of my query?"
+
+```
+Query tokens:     [q1]  [q2]  [q3]
+                    \    |    /
+                     \   |   /     Each query token searches
+                      v  v  v      for its best match
+Document tokens:  [d1] [d2] [d3] [d4]
+                   ↑         ↑
+                  0.9       0.8    (best matches)
+
+MaxSim = 0.9 + 0.8 + ... (sum of best matches)
 ```
 
 For each query token, find its best-matching document token, then sum.
@@ -200,14 +201,18 @@ This is related to why BM25 with IDF weighting works: common words contribute le
 
 ### Pool Factor
 
-| Factor | Reduction | Quality Loss | When to Use |
-|--------|-----------|--------------|-------------|
-| 2 | 50% | ~0% | Default choice |
-| 3 | 66% | ~1% | Good tradeoff |
-| 4 | 75% | 2-5% | Use `hierarchical` feature |
-| 8+ | 87%+ | 5-10% | Storage-critical only |
+| Factor | Tokens Kept | MRR@10 Loss (MS MARCO) | When to Use |
+|--------|-------------|------------------------|-------------|
+| 2 | 50% | 0.1–0.3% | Default choice |
+| 3 | 33% | 0.5–1.0% | Good tradeoff |
+| 4 | 25% | 1.5–3.0% | Use `hierarchical` feature |
+| 8+ | 12% | 5–10% | Storage-critical only |
 
-Quality loss measured on MS MARCO and BEIR benchmarks.
+Numbers from Clavie et al. (2024) on MS MARCO dev set.
+
+**When pooling hurts more:** Long documents with many distinct concepts. The merged centroid may not match specific query terms as precisely.
+
+**When pooling is safe:** Short passages, documents with repetitive phrasing, or queries that match broad topics rather than specific terms.
 
 ### Greedy vs Ward's
 
@@ -260,7 +265,12 @@ During training, the model is penalized at multiple checkpoints:
 
 $$\mathcal{L} = \sum_{k \in \{64, 128, 256, \ldots\}} \lambda_k \cdot \text{loss}(v_{0:k})$$
 
-This forces the model to pack the most important semantic information into the *early* dimensions. Later dimensions add refinement, but aren't strictly necessary.
+This forces the model to pack information hierarchically:
+- **Early dimensions (0–64):** Broad topic (is this about sports? science? cooking?)
+- **Middle dimensions (64–256):** Subtopic and key entities
+- **Late dimensions (256+):** Fine-grained distinctions, rare concepts
+
+Analogy: Like a progressive JPEG, where early bytes give you a blurry image and later bytes add detail.
 
 ### Two-Stage Retrieval
 
@@ -357,14 +367,17 @@ Imagine candidates as points in embedding space:
 ```
         relevance →
     high ┌─────────────────────┐
-         │     A               │   A, B, C are all similar (clustered)
-         │    B  C             │   D is different but less relevant
+         │     A               │   A, B, C are clustered (similar)
+         │    B  C             │   D is isolated (different topic)
          │                     │
          │           D         │
      low └─────────────────────┘
+
+Pure relevance (λ=1): Pick A, B, C → all from same cluster
+MMR (λ=0.5):          Pick A, then D (diverse), then B
 ```
 
-With pure relevance (λ=1), you'd pick A, B, C. With MMR (λ=0.5), you might pick A, D, then B—getting coverage of both clusters.
+After selecting A, the penalty term `-max sim(d, A)` hurts B and C (similar to A) but barely affects D (different from A).
 
 ### Worked Example
 
@@ -381,11 +394,14 @@ After selecting "Intro to ML" (doc A), compute MMR for remaining candidates:
 
 ### Lambda Parameter
 
-| λ Value | Effect | Use Case |
-|---------|--------|----------|
-| 0.3–0.5 | Diversity-biased | Exploration, discovery |
-| 0.5 | Balanced | General purpose, RAG |
-| 0.7–0.9 | Relevance-biased | Precision search |
+| λ Value | Behavior | Use Case |
+|---------|----------|----------|
+| 0.3 | Strong diversity penalty | Exploration, "show me different options" |
+| 0.5 | Equal weight | General purpose, RAG context |
+| 0.7 | Mild diversity penalty | "I want relevant results, but some variety" |
+| 1.0 | No diversity (pure top-k) | Known-item search, single correct answer |
+
+There's no universally optimal λ—it depends on how clustered your candidates are (Gao & Zhang, 2024).
 
 ### Complexity
 
@@ -415,7 +431,16 @@ A DPP defines a probability distribution over subsets where items "repel" each o
 
 $$P(S) \propto \det(L_S)$$
 
-**Why determinants?** The determinant of a matrix formed by vectors measures the volume of the parallelepiped they span. Orthogonal vectors span maximum volume; parallel vectors span zero volume. This makes determinants natural measures of "spread" or diversity.
+**Why determinants?** The determinant measures the volume spanned by vectors:
+
+```
+Parallel vectors:         Orthogonal vectors:
+    →                         →
+   /                         |
+  /  (flat, zero volume)     └─→  (square, max volume)
+```
+
+Two similar items span a thin sliver. Two different items span a large area. DPP prefers sets that span large volumes.
 
 ### DPP vs MMR
 
