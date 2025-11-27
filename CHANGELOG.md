@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.26] - 2025-11-27
+
+### Added
+- Concise examples for common use cases:
+  - `rag_rerank.rs`: RAG chunk reranking
+  - `search_diversity.rs`: MMR λ parameter demo
+  - `colbert_pooling.rs`: Token compression
+- README examples section
+
 ## [0.7.25] - 2025-11-27
 
 ### Added
@@ -8,6 +17,7 @@
   - Property tests for ordering, bounds, finite scores
 - Non-commutativity warning in `maxsim` documentation
 - MMR benchmark (`bench_mmr`)
+- Integration tests: `e2e_clustering_pooling`, `e2e_mmr_diversity`
 
 ### Changed
 - CI now tests clippy and docs with `--all-features`

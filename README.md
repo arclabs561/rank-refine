@@ -143,6 +143,15 @@ let pooled = pool_tokens(&doc_tokens, 4);  // → 8 tokens (75% smaller)
 |---------|------|---------|
 | `hierarchical` | kodama | Better pooling at 4x+ compression |
 
+## Examples
+
+```bash
+cargo run --example rerank           # Dense scoring basics
+cargo run --example rag_rerank       # RAG chunk reranking
+cargo run --example search_diversity # MMR diversity selection
+cargo run --example colbert_pooling  # Token compression
+```
+
 ## Documentation
 
 | Document | Audience | Contents |
