@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.33] - 2025-11-27
+
+### Fixed
+- Document all error variant fields (100% docs.rs coverage)
+
 ## [0.7.32] - 2025-11-27
 
 ### Added
