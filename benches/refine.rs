@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use rank_refine::{colbert, matryoshka, simd};
+use rank_refine::{colbert, diversity, matryoshka, simd};
 
 fn random_vec(dim: usize, seed: u64) -> Vec<f32> {
     // Simple LCG for reproducible "random" vectors
@@ -199,6 +199,36 @@ fn bench_maxsim_pooled(c: &mut Criterion) {
     g.finish();
 }
 
+fn bench_mmr(c: &mut Criterion) {
+    let mut g = c.benchmark_group("mmr");
+
+    for &n in &[50, 100, 200] {
+        // Generate candidates with scores
+        let candidates: Vec<(usize, f32)> = (0..n).map(|i| (i, 1.0 - i as f32 / n as f32)).collect();
+
+        // Generate similarity matrix (flattened, row-major)
+        let sim: Vec<f32> = (0..n)
+            .flat_map(|i| {
+                (0..n).map(move |j| {
+                    if i == j {
+                        1.0
+                    } else {
+                        0.5 - (i as f32 - j as f32).abs() / (2.0 * n as f32)
+                    }
+                })
+            })
+            .collect();
+
+        let config = diversity::MmrConfig::default().with_k(10);
+
+        g.bench_with_input(BenchmarkId::new("k10", n), &n, |bench, _| {
+            bench.iter(|| black_box(diversity::mmr(&candidates, &sim, config)));
+        });
+    }
+
+    g.finish();
+}
+
 criterion_group!(
     benches,
     bench_simd,
@@ -206,6 +236,7 @@ criterion_group!(
     bench_matryoshka,
     bench_colbert,
     bench_pool_tokens,
-    bench_maxsim_pooled
+    bench_maxsim_pooled,
+    bench_mmr
 );
 criterion_main!(benches);

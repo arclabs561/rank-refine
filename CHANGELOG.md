@@ -11,6 +11,12 @@
 ### Removed
 - Redundant `from_iter` method (use `FromIterator` trait instead)
 
+## [0.7.25] - 2025-11-27
+
+### Changed
+- CI now tests clippy and docs with `--all-features`
+- Added MMR benchmark (`bench_mmr`)
+
 ## [0.7.24] - 2025-11-27
 
 ### Added
