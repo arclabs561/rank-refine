@@ -88,7 +88,7 @@ pub mod prelude {
     pub use crate::RefineConfig;
 
     // ColBERT late interaction
-    pub use crate::colbert::{pool_tokens, rank as colbert_rank};
+    pub use crate::colbert::{pool_tokens, rank as colbert_rank, TokenIndex};
 
     // Cross-encoder
     pub use crate::crossencoder::CrossEncoderModel;

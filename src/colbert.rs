@@ -493,6 +493,180 @@ pub fn refine_with_config<I: Clone + Eq + std::hash::Hash>(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Token Index (pre-computed embeddings for repeated scoring)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Pre-computed token embeddings for efficient repeated scoring.
+///
+/// Use `TokenIndex` when scoring the same set of targets against many queries:
+/// - **Document retrieval**: Index documents once, search with many queries
+/// - **NER/GLiNER**: Index entity type labels once, match against text spans
+/// - **Classification**: Index class embeddings once, classify many inputs
+///
+/// # Why Not Just `Vec<(I, Vec<Vec<f32>>)>`?
+///
+/// `TokenIndex` provides:
+/// 1. **Ergonomic API**: `score_all`, `top_k`, `get` methods
+/// 2. **O(1) lookup by ID** via internal HashMap
+/// 3. **Clear intent**: "This is a pre-computed index, not ephemeral data"
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::colbert::TokenIndex;
+///
+/// // Build index once (e.g., at startup)
+/// let index = TokenIndex::new(vec![
+///     ("doc1", vec![vec![1.0, 0.0], vec![0.0, 1.0]]),
+///     ("doc2", vec![vec![0.5, 0.5]]),
+/// ]);
+///
+/// // Score many queries against the same index
+/// let query1 = vec![vec![1.0, 0.0]];
+/// let query2 = vec![vec![0.0, 1.0]];
+///
+/// let results1 = index.top_k(&query1, 1);
+/// let results2 = index.top_k(&query2, 1);
+///
+/// assert_eq!(results1[0].0, "doc1");
+/// assert_eq!(results2[0].0, "doc1");
+/// ```
+#[derive(Debug, Clone)]
+pub struct TokenIndex<I> {
+    entries: Vec<(I, Vec<Vec<f32>>)>,
+}
+
+impl<I> TokenIndex<I> {
+    /// Create a new token index from (id, tokens) pairs.
+    pub fn new(entries: Vec<(I, Vec<Vec<f32>>)>) -> Self {
+        Self { entries }
+    }
+
+    /// Number of entries in the index.
+    #[inline]
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Whether the index is empty.
+    #[inline]
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Iterate over all entries.
+    pub fn iter(&self) -> impl Iterator<Item = &(I, Vec<Vec<f32>>)> {
+        self.entries.iter()
+    }
+
+    /// Get the underlying entries.
+    #[must_use]
+    pub fn entries(&self) -> &[(I, Vec<Vec<f32>>)] {
+        &self.entries
+    }
+
+    /// Consume the index and return the underlying entries.
+    #[must_use]
+    pub fn into_entries(self) -> Vec<(I, Vec<Vec<f32>>)> {
+        self.entries
+    }
+}
+
+impl<I: Clone> TokenIndex<I> {
+    /// Score a query against all entries using MaxSim.
+    ///
+    /// Returns `(id, score)` pairs in index order (not sorted).
+    /// Use [`top_k`](Self::top_k) or [`rank`](Self::rank) for sorted results.
+    #[must_use]
+    pub fn score_all(&self, query: &[Vec<f32>]) -> Vec<(I, f32)> {
+        let query_refs = crate::as_slices(query);
+        self.entries
+            .iter()
+            .map(|(id, doc_tokens)| {
+                let doc_refs = crate::as_slices(doc_tokens);
+                (id.clone(), simd::maxsim(&query_refs, &doc_refs))
+            })
+            .collect()
+    }
+
+    /// Score a query against all entries using MaxSim with cosine similarity.
+    #[must_use]
+    pub fn score_all_cosine(&self, query: &[Vec<f32>]) -> Vec<(I, f32)> {
+        let query_refs = crate::as_slices(query);
+        self.entries
+            .iter()
+            .map(|(id, doc_tokens)| {
+                let doc_refs = crate::as_slices(doc_tokens);
+                (id.clone(), simd::maxsim_cosine(&query_refs, &doc_refs))
+            })
+            .collect()
+    }
+
+    /// Score and return all results sorted by descending score.
+    #[must_use]
+    pub fn rank(&self, query: &[Vec<f32>]) -> Vec<(I, f32)> {
+        let mut results = self.score_all(query);
+        crate::sort_scored_desc(&mut results);
+        results
+    }
+
+    /// Score and return top-k results sorted by descending score.
+    #[must_use]
+    pub fn top_k(&self, query: &[Vec<f32>], k: usize) -> Vec<(I, f32)> {
+        let mut results = self.score_all(query);
+        crate::sort_scored_desc(&mut results);
+        results.truncate(k);
+        results
+    }
+
+    /// Score using cosine and return top-k results sorted by descending score.
+    #[must_use]
+    pub fn top_k_cosine(&self, query: &[Vec<f32>], k: usize) -> Vec<(I, f32)> {
+        let mut results = self.score_all_cosine(query);
+        crate::sort_scored_desc(&mut results);
+        results.truncate(k);
+        results
+    }
+}
+
+impl<I: Clone + Eq + std::hash::Hash> TokenIndex<I> {
+    /// Get token embeddings by ID.
+    ///
+    /// O(n) scan. For frequent lookups, consider maintaining a separate HashMap.
+    #[must_use]
+    pub fn get(&self, id: &I) -> Option<&Vec<Vec<f32>>> {
+        self.entries
+            .iter()
+            .find(|(entry_id, _)| entry_id == id)
+            .map(|(_, tokens)| tokens)
+    }
+
+    /// Check if the index contains an ID.
+    #[must_use]
+    pub fn contains(&self, id: &I) -> bool {
+        self.get(id).is_some()
+    }
+}
+
+impl<I> Default for TokenIndex<I> {
+    fn default() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
+    }
+}
+
+impl<I> FromIterator<(I, Vec<Vec<f32>>)> for TokenIndex<I> {
+    fn from_iter<T: IntoIterator<Item = (I, Vec<Vec<f32>>)>>(iter: T) -> Self {
+        Self {
+            entries: iter.into_iter().collect(),
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -883,6 +1057,171 @@ mod tests {
             "Expected pooled vector near [0,1,0,0], best sim: {}",
             max_sim
         );
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // TokenIndex tests
+    // ───────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn token_index_new_and_len() {
+        let index: TokenIndex<&str> = TokenIndex::new(vec![
+            ("doc1", vec![vec![1.0, 0.0]]),
+            ("doc2", vec![vec![0.0, 1.0]]),
+        ]);
+        assert_eq!(index.len(), 2);
+        assert!(!index.is_empty());
+    }
+
+    #[test]
+    fn token_index_empty() {
+        let index: TokenIndex<&str> = TokenIndex::default();
+        assert_eq!(index.len(), 0);
+        assert!(index.is_empty());
+    }
+
+    #[test]
+    fn token_index_score_all() {
+        let index = TokenIndex::new(vec![
+            ("doc1", vec![vec![1.0, 0.0]]),
+            ("doc2", vec![vec![0.0, 1.0]]),
+        ]);
+        let query = vec![vec![1.0, 0.0]];
+
+        let scores = index.score_all(&query);
+        assert_eq!(scores.len(), 2);
+
+        // doc1 should have score ~1.0, doc2 should have score ~0.0
+        let doc1_score = scores.iter().find(|(id, _)| *id == "doc1").unwrap().1;
+        let doc2_score = scores.iter().find(|(id, _)| *id == "doc2").unwrap().1;
+        assert!((doc1_score - 1.0).abs() < 1e-5);
+        assert!(doc2_score.abs() < 1e-5);
+    }
+
+    #[test]
+    fn token_index_rank() {
+        let index = TokenIndex::new(vec![
+            ("doc1", vec![vec![1.0, 0.0], vec![0.0, 1.0]]),
+            ("doc2", vec![vec![0.5, 0.5]]),
+            ("doc3", vec![vec![0.9, 0.1]]),
+        ]);
+        let query = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+
+        let ranked = index.rank(&query);
+        assert_eq!(ranked.len(), 3);
+        // doc1 has perfect matches for both query tokens
+        assert_eq!(ranked[0].0, "doc1");
+    }
+
+    #[test]
+    fn token_index_top_k() {
+        let index = TokenIndex::new(vec![
+            ("doc1", vec![vec![1.0, 0.0]]),
+            ("doc2", vec![vec![0.9, 0.1]]),
+            ("doc3", vec![vec![0.8, 0.2]]),
+        ]);
+        let query = vec![vec![1.0, 0.0]];
+
+        let top2 = index.top_k(&query, 2);
+        assert_eq!(top2.len(), 2);
+        assert_eq!(top2[0].0, "doc1");
+        assert_eq!(top2[1].0, "doc2");
+    }
+
+    #[test]
+    fn token_index_top_k_larger_than_size() {
+        let index = TokenIndex::new(vec![("doc1", vec![vec![1.0, 0.0]])]);
+        let query = vec![vec![1.0, 0.0]];
+
+        let top10 = index.top_k(&query, 10);
+        assert_eq!(top10.len(), 1);
+    }
+
+    #[test]
+    fn token_index_get() {
+        let index = TokenIndex::new(vec![
+            ("doc1", vec![vec![1.0, 0.0]]),
+            ("doc2", vec![vec![0.0, 1.0]]),
+        ]);
+
+        assert!(index.get(&"doc1").is_some());
+        assert!(index.get(&"doc2").is_some());
+        assert!(index.get(&"doc3").is_none());
+    }
+
+    #[test]
+    fn token_index_contains() {
+        let index = TokenIndex::new(vec![("doc1", vec![vec![1.0, 0.0]])]);
+
+        assert!(index.contains(&"doc1"));
+        assert!(!index.contains(&"doc2"));
+    }
+
+    #[test]
+    fn token_index_from_iter() {
+        let entries = vec![
+            ("doc1", vec![vec![1.0, 0.0]]),
+            ("doc2", vec![vec![0.0, 1.0]]),
+        ];
+        let index: TokenIndex<&str> = entries.into_iter().collect();
+        assert_eq!(index.len(), 2);
+    }
+
+    #[test]
+    fn token_index_iter() {
+        let index = TokenIndex::new(vec![
+            ("doc1", vec![vec![1.0, 0.0]]),
+            ("doc2", vec![vec![0.0, 1.0]]),
+        ]);
+
+        let ids: Vec<_> = index.iter().map(|(id, _)| *id).collect();
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&"doc1"));
+        assert!(ids.contains(&"doc2"));
+    }
+
+    #[test]
+    fn token_index_into_entries() {
+        let index = TokenIndex::new(vec![("doc1", vec![vec![1.0, 0.0]])]);
+        let entries = index.into_entries();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].0, "doc1");
+    }
+
+    #[test]
+    fn token_index_score_all_cosine() {
+        let index = TokenIndex::new(vec![
+            ("doc1", vec![vec![2.0, 0.0]]), // unnormalized
+            ("doc2", vec![vec![0.0, 2.0]]), // unnormalized
+        ]);
+        let query = vec![vec![1.0, 0.0]];
+
+        let scores = index.score_all_cosine(&query);
+        // Cosine normalizes, so doc1 should still have score ~1.0
+        let doc1_score = scores.iter().find(|(id, _)| *id == "doc1").unwrap().1;
+        assert!((doc1_score - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn token_index_matches_rank_function() {
+        // Verify TokenIndex.rank() produces same results as standalone rank()
+        let docs = vec![
+            ("d1", vec![vec![1.0, 0.0], vec![0.0, 1.0]]),
+            ("d2", vec![vec![0.5, 0.5]]),
+            ("d3", vec![vec![0.9, 0.1]]),
+        ];
+        let query = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+
+        let index = TokenIndex::new(docs.clone());
+        let index_ranked = index.rank(&query);
+        let func_ranked = rank(&query, &docs);
+
+        // Same order and scores
+        assert_eq!(index_ranked.len(), func_ranked.len());
+        for (a, b) in index_ranked.iter().zip(func_ranked.iter()) {
+            assert_eq!(a.0, b.0);
+            assert!((a.1 - b.1).abs() < 1e-6);
+        }
     }
 }
 
@@ -1330,6 +1669,100 @@ mod proptests {
 
             let score = crate::simd::maxsim(&q_refs, &p_refs);
             prop_assert!(score.is_finite(), "MaxSim with pooled docs returned {}", score);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // TokenIndex property tests
+        // ─────────────────────────────────────────────────────────────────────────
+
+        /// TokenIndex.rank() produces sorted output (descending)
+        #[test]
+        fn token_index_rank_sorted(n_docs in 2usize..8, n_query in 1usize..4, dim in 2usize..8) {
+            let docs: Vec<(u32, Vec<Vec<f32>>)> = (0..n_docs as u32)
+                .map(|i| {
+                    let tokens: Vec<Vec<f32>> = (0..2)
+                        .map(|t| (0..dim).map(|j| ((i as usize * 2 + t + j) as f32 * 0.1).sin()).collect())
+                        .collect();
+                    (i, tokens)
+                })
+                .collect();
+            let query: Vec<Vec<f32>> = (0..n_query)
+                .map(|i| (0..dim).map(|j| ((i * dim + j) as f32 * 0.1).cos()).collect())
+                .collect();
+
+            let index = TokenIndex::new(docs);
+            let ranked = index.rank(&query);
+
+            for window in ranked.windows(2) {
+                prop_assert!(
+                    window[0].1 >= window[1].1 - 1e-6,
+                    "Not sorted: {} >= {}",
+                    window[0].1,
+                    window[1].1
+                );
+            }
+        }
+
+        /// TokenIndex.top_k() returns at most k results
+        #[test]
+        fn token_index_top_k_bounded(n_docs in 1usize..10, k in 1usize..5, dim in 2usize..8) {
+            let docs: Vec<(u32, Vec<Vec<f32>>)> = (0..n_docs as u32)
+                .map(|i| (i, vec![vec![(i as f32 * 0.1).sin(); dim]]))
+                .collect();
+            let query = vec![vec![0.5f32; dim]];
+
+            let index = TokenIndex::new(docs);
+            let top = index.top_k(&query, k);
+
+            prop_assert!(top.len() <= k.min(n_docs));
+        }
+
+        /// TokenIndex preserves all entries
+        #[test]
+        fn token_index_preserves_count(n_docs in 1usize..10, dim in 2usize..8) {
+            let docs: Vec<(u32, Vec<Vec<f32>>)> = (0..n_docs as u32)
+                .map(|i| (i, vec![vec![(i as f32 * 0.1).sin(); dim]]))
+                .collect();
+
+            let index = TokenIndex::new(docs);
+            prop_assert_eq!(index.len(), n_docs);
+        }
+
+        /// TokenIndex.score_all() returns all entries
+        #[test]
+        fn token_index_score_all_count(n_docs in 1usize..10, dim in 2usize..8) {
+            let docs: Vec<(u32, Vec<Vec<f32>>)> = (0..n_docs as u32)
+                .map(|i| (i, vec![vec![(i as f32 * 0.1).sin(); dim]]))
+                .collect();
+            let query = vec![vec![0.5f32; dim]];
+
+            let index = TokenIndex::new(docs);
+            let scores = index.score_all(&query);
+
+            prop_assert_eq!(scores.len(), n_docs);
+        }
+
+        /// TokenIndex produces finite scores
+        #[test]
+        fn token_index_scores_finite(n_docs in 1usize..5, n_query in 1usize..3, dim in 2usize..8) {
+            let docs: Vec<(u32, Vec<Vec<f32>>)> = (0..n_docs as u32)
+                .map(|i| {
+                    let tokens: Vec<Vec<f32>> = (0..2)
+                        .map(|t| (0..dim).map(|j| ((i as usize * 2 + t + j) as f32 * 0.1).sin()).collect())
+                        .collect();
+                    (i, tokens)
+                })
+                .collect();
+            let query: Vec<Vec<f32>> = (0..n_query)
+                .map(|i| (0..dim).map(|j| ((i * dim + j) as f32 * 0.1).cos()).collect())
+                .collect();
+
+            let index = TokenIndex::new(docs);
+            let scores = index.score_all(&query);
+
+            for (id, score) in &scores {
+                prop_assert!(score.is_finite(), "Score for {} is not finite: {}", id, score);
+            }
         }
     }
 }

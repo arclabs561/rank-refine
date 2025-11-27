@@ -83,8 +83,26 @@ pub fn cosine(a: &[f32], b: &[f32]) -> f32 {
 ///
 /// Used by ColBERT/PLAID for late interaction scoring.
 ///
-/// Returns 0.0 if `query_tokens` is empty.
-/// Returns 0.0 if `doc_tokens` is empty (no matches possible).
+/// # ⚠️ Not Commutative
+///
+/// **`maxsim(Q, D) ≠ maxsim(D, Q)`** — argument order matters!
+///
+/// Query tokens "select" from the document's vocabulary. Each query token
+/// finds its best match among document tokens, then scores are summed.
+/// Reversing the arguments gives a semantically different operation.
+///
+/// ```text
+/// maxsim(Q, D) = Σᵢ maxⱼ(Qᵢ · Dⱼ)  // sum over |Q| terms
+/// maxsim(D, Q) = Σⱼ maxᵢ(Dⱼ · Qᵢ)  // sum over |D| terms (different!)
+/// ```
+///
+/// If you accidentally swap query/doc, scores will be wrong and rankings
+/// will be meaningless. The first argument is always the **query**.
+///
+/// # Returns
+///
+/// - `0.0` if `query_tokens` is empty
+/// - `0.0` if `doc_tokens` is empty (no matches possible)
 #[inline]
 #[must_use]
 pub fn maxsim(query_tokens: &[&[f32]], doc_tokens: &[&[f32]]) -> f32 {
@@ -103,6 +121,8 @@ pub fn maxsim(query_tokens: &[&[f32]], doc_tokens: &[&[f32]]) -> f32 {
 }
 
 /// `MaxSim` with cosine similarity instead of dot product.
+///
+/// See [`maxsim`] for details. **Not commutative** — query must be first argument.
 #[inline]
 #[must_use]
 pub fn maxsim_cosine(query_tokens: &[&[f32]], doc_tokens: &[&[f32]]) -> f32 {
@@ -128,6 +148,8 @@ pub fn maxsim_cosine(query_tokens: &[&[f32]], doc_tokens: &[&[f32]]) -> f32 {
 ///
 /// Equivalent to `maxsim(&as_slices(query), &as_slices(doc))` but more ergonomic.
 ///
+/// See [`maxsim`] for details. **Not commutative** — query must be first argument.
+///
 /// # Example
 ///
 /// ```rust
@@ -146,6 +168,8 @@ pub fn maxsim_vecs(query_tokens: &[Vec<f32>], doc_tokens: &[Vec<f32>]) -> f32 {
 }
 
 /// `MaxSim` cosine for owned token vectors (convenience wrapper).
+///
+/// See [`maxsim`] for details. **Not commutative** — query must be first argument.
 #[inline]
 #[must_use]
 pub fn maxsim_cosine_vecs(query_tokens: &[Vec<f32>], doc_tokens: &[Vec<f32>]) -> f32 {
@@ -156,8 +180,12 @@ pub fn maxsim_cosine_vecs(query_tokens: &[Vec<f32>], doc_tokens: &[Vec<f32>]) ->
 
 /// Batch MaxSim: score a query against multiple documents.
 ///
-/// Returns a vector of scores, one per document. This is more efficient
-/// than calling `maxsim` in a loop when you have many documents.
+/// Returns a vector of scores, one per document. More efficient than
+/// calling `maxsim` in a loop when you have many documents.
+///
+/// See [`maxsim`] for details. **Not commutative** — query must be first argument.
+///
+/// For pre-computed document indices with ID tracking, see [`crate::colbert::TokenIndex`].
 ///
 /// # Example
 ///
@@ -184,6 +212,8 @@ pub fn maxsim_batch(query: &[Vec<f32>], docs: &[Vec<Vec<f32>>]) -> Vec<f32> {
 }
 
 /// Batch MaxSim with cosine similarity.
+///
+/// See [`maxsim`] for details. **Not commutative** — query must be first argument.
 #[must_use]
 pub fn maxsim_cosine_batch(query: &[Vec<f32>], docs: &[Vec<Vec<f32>>]) -> Vec<f32> {
     let q = crate::as_slices(query);
