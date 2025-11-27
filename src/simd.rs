@@ -568,8 +568,9 @@ unsafe fn dot_avx2(a: &[f32], b: &[f32]) -> f32 {
     let a_ptr = a.as_ptr();
     let b_ptr = b.as_ptr();
 
-    // SAFETY: We iterate chunks*8 elements, which is <= n <= min(a.len(), b.len()).
-    // Pointer arithmetic stays within bounds.
+    // SAFETY: We use `_mm256_loadu_ps` (unaligned load) so no alignment required.
+    // Pointer arithmetic: offset = i*8 < chunks*8 <= n, so a_ptr.add(offset)
+    // stays within [a.as_ptr(), a.as_ptr() + n), same for b.
     for i in 0..chunks {
         let offset = i * 8;
         let va = _mm256_loadu_ps(a_ptr.add(offset));
@@ -617,7 +618,8 @@ unsafe fn dot_neon(a: &[f32], b: &[f32]) -> f32 {
     let a_ptr = a.as_ptr();
     let b_ptr = b.as_ptr();
 
-    // SAFETY: We iterate chunks*4 elements, which is <= n <= min(a.len(), b.len()).
+    // SAFETY: `vld1q_f32` is an unaligned load, no alignment required.
+    // Pointer arithmetic: offset = i*4 < chunks*4 <= n, so within bounds.
     for i in 0..chunks {
         let offset = i * 4;
         let va = vld1q_f32(a_ptr.add(offset));
