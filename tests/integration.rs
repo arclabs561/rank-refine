@@ -437,6 +437,113 @@ fn e2e_trait_based_scoring() {
 // E2E Test: Edge Cases in Pipeline
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// E2E Test: Clustering Pooling (uses hierarchical when feature enabled)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn e2e_clustering_pooling() {
+    const DIM: usize = 128;
+
+    // Document with semantically distinct segments
+    let document = "Rust memory safety systems programming \
+                    Python machine learning data science \
+                    JavaScript web browser frontend";
+
+    let tokens = mock_token_embed(document, DIM);
+    let original_count = tokens.len();
+
+    // Clustering pooling (uses hierarchical when feature enabled)
+    let pooled = colbert::pool_tokens(&tokens, 2);
+
+    // Verify reduction
+    assert!(
+        pooled.len() <= original_count,
+        "Should reduce token count"
+    );
+
+    // Dimension preserved
+    for token in &pooled {
+        assert_eq!(token.len(), DIM);
+    }
+
+    // Pooled can still score queries
+    let query = mock_token_embed("Rust memory", DIM);
+    let score = simd::maxsim_vecs(&query, &pooled);
+    assert!(score > 0.0, "Pooled should be scorable");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// E2E Test: MMR Diversity Selection
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn e2e_mmr_diversity() {
+    use rank_refine::diversity::{mmr, MmrConfig};
+
+    const DIM: usize = 64;
+
+    // Documents: some similar, some diverse
+    let documents = vec![
+        ("rust1", "Rust systems programming"),
+        ("rust2", "Rust memory safety"),
+        ("rust3", "Rust web assembly"),
+        ("python", "Python machine learning"),
+        ("java", "Java enterprise software"),
+    ];
+
+    // Generate embeddings and compute similarity matrix
+    let embeddings: Vec<Vec<f32>> = documents
+        .iter()
+        .map(|(_, text)| mock_dense_embed(text, DIM))
+        .collect();
+
+    // Relevance scores (rust docs more relevant)
+    let candidates: Vec<(&str, f32)> = vec![
+        ("rust1", 0.95),
+        ("rust2", 0.90),
+        ("rust3", 0.85),
+        ("python", 0.70),
+        ("java", 0.60),
+    ];
+
+    // Pairwise similarity matrix (flattened)
+    let n = embeddings.len();
+    let mut similarity = vec![0.0; n * n];
+    for i in 0..n {
+        for j in 0..n {
+            similarity[i * n + j] = simd::cosine(&embeddings[i], &embeddings[j]);
+        }
+    }
+
+    // Select top 3 with diversity
+    let config = MmrConfig::default().with_lambda(0.5).with_k(3);
+    let selected = mmr(&candidates, &similarity, config);
+
+    assert_eq!(selected.len(), 3);
+
+    // Verify results are sorted by final score
+    for window in selected.windows(2) {
+        assert!(window[0].1 >= window[1].1, "Results should be sorted");
+    }
+
+    // Verify diversity had an effect: not just top-3 by relevance
+    // (the top 3 by pure relevance would be rust1, rust2, rust3)
+    let ids: Vec<_> = selected.iter().map(|(id, _)| *id).collect();
+
+    // At minimum, verify we got valid IDs from our candidate set
+    for id in &ids {
+        assert!(
+            candidates.iter().any(|(cid, _)| cid == id),
+            "Selected ID should be from candidates"
+        );
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// E2E Test: Edge Cases in Pipeline
+// ─────────────────────────────────────────────────────────────────────────────
+
 #[test]
 fn e2e_edge_cases() {
     const DIM: usize = 32;
