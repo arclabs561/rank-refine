@@ -88,8 +88,18 @@ Select diverse results, not just top-k most similar:
 ```rust
 use rank_refine::diversity::{mmr_cosine, MmrConfig};
 
-let config = MmrConfig::default().with_top_k(10);
-let diverse = mmr_cosine(&candidates, &query_emb, config);
+// Candidates: (id, relevance_score)
+let candidates = vec![("d1", 0.9), ("d2", 0.85), ("d3", 0.8)];
+// Their embeddings (same order)
+let embeddings = vec![
+    vec![1.0, 0.0],  // d1
+    vec![0.9, 0.1],  // d2: similar to d1
+    vec![0.0, 1.0],  // d3: different
+];
+
+let config = MmrConfig::default().with_k(2);
+let diverse = mmr_cosine(&candidates, &embeddings, config);
+// Returns d1 (most relevant) and d3 (diverse from d1)
 ```
 
 - λ=1.0: pure relevance
@@ -98,12 +108,14 @@ let diverse = mmr_cosine(&candidates, &query_emb, config);
 
 ## Token Pooling
 
-Reduce ColBERT storage:
+Reduce ColBERT storage by clustering similar tokens:
 
 ```rust
 use rank_refine::colbert::pool_tokens;
 
-let pooled = pool_tokens(&doc_tokens, 4);  // 75% smaller, <5% quality loss
+// 32 tokens × 128 dims
+let doc_tokens: Vec<Vec<f32>> = vec![vec![0.1; 128]; 32];
+let pooled = pool_tokens(&doc_tokens, 4);  // → 8 tokens (75% smaller)
 ```
 
 ## Features

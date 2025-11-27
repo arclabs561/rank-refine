@@ -125,6 +125,18 @@ Better for factor 4+. Uses [kodama](https://docs.rs/kodama).
 
 Reference: [Clavié et al., 2024](https://arxiv.org/abs/2409.14683)
 
+### Future: Token Importance Weighting
+
+**Weighted Chamfer** (Archish et al., Nov 2025) extends MaxSim with learnable
+per-token weights:
+
+$$\text{WeightedMaxSim}(Q, D) = \sum_{i=1}^{m} w_i \cdot \max_{j \in [1,n]} (q_i \cdot d_j)$$
+
+where weights $w_i$ are learned and constrained to sum to 1. Shows +2% improvement
+on BEIR in few-shot settings. Not yet implemented here.
+
+Reference: [arxiv.org/abs/2511.16106](https://arxiv.org/abs/2511.16106)
+
 ---
 
 ## Matryoshka Embeddings
@@ -195,6 +207,15 @@ All `unsafe` code has `// SAFETY:` comments documenting:
 2. Alignment requirements met
 3. Bounds checking
 
+### Performance Note: Subnormals
+
+Denormalized (subnormal) floats can cause **140+ cycle penalties** per SIMD
+operation. Values below ~$10^{-38}$ for f32 trigger microcode paths.
+
+In practice, this is rare for embeddings (typically normalized to unit length).
+If you encounter slow performance with small values, consider flush-to-zero
+mode at the application level.
+
 ---
 
 ## Mathematical Properties
@@ -223,7 +244,9 @@ Properties:
 
 Uses `f32::total_cmp` for deterministic ordering:
 
-$$\text{NaN} < -\infty < \ldots < 0 < \ldots < +\infty$$
+$$-\infty < \ldots < -0 < +0 < \ldots < +\infty < \text{NaN}$$
+
+NaN values sort to the **end** (lowest priority in descending sort).
 
 ---
 
@@ -247,9 +270,12 @@ $$\text{NaN} < -\infty < \ldots < 0 < \ldots < +\infty$$
 ### Papers
 
 - **ColBERT**: [arxiv.org/abs/2004.12832](https://arxiv.org/abs/2004.12832)
+- **ColBERTv2**: [arxiv.org/abs/2112.01488](https://arxiv.org/abs/2112.01488)
 - **PLAID**: [arxiv.org/abs/2205.09707](https://arxiv.org/abs/2205.09707)
 - **Matryoshka**: [arxiv.org/abs/2205.13147](https://arxiv.org/abs/2205.13147)
+- **2D Matryoshka**: [arxiv.org/abs/2402.14776](https://arxiv.org/abs/2402.14776)
 - **Token Pooling**: [arxiv.org/abs/2409.14683](https://arxiv.org/abs/2409.14683)
+- **Token Importance**: [arxiv.org/abs/2511.16106](https://arxiv.org/abs/2511.16106)
 
 ### Libraries
 
