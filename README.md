@@ -1,6 +1,6 @@
 # rank-refine
 
-Reranking with embeddings. SIMD-accelerated.
+SIMD-accelerated similarity scoring for vector search and RAG.
 
 [![CI](https://github.com/arclabs561/rank-refine/actions/workflows/ci.yml/badge.svg)](https://github.com/arclabs561/rank-refine/actions)
 [![Crates.io](https://img.shields.io/crates/v/rank-refine.svg)](https://crates.io/crates/rank-refine)
@@ -10,13 +10,26 @@ Reranking with embeddings. SIMD-accelerated.
 cargo add rank-refine
 ```
 
+## What This Is
+
+Scoring primitives for retrieval systems:
+
+| You need | This crate provides |
+|----------|---------------------|
+| Score pre-computed embeddings | `cosine`, `dot`, `maxsim` |
+| ColBERT/late interaction | `maxsim_vecs`, `maxsim_batch` |
+| Diversity selection | `mmr_cosine`, `dpp` |
+| Compress token embeddings | `pool_tokens`, `pool_tokens_adaptive` |
+
+**What this is NOT**: embedding generation, model inference, storage. See [fastembed-rs](https://github.com/Anush008/fastembed-rs) for inference.
+
 ## Usage
 
 ```rust
 use rank_refine::simd::{cosine, maxsim_vecs};
 
-// Dense
-let score = cosine(&query, &doc);
+// Dense similarity
+let score = cosine(&query_embedding, &doc_embedding);
 
 // Late interaction (ColBERT)
 let score = maxsim_vecs(&query_tokens, &doc_tokens);
@@ -24,7 +37,7 @@ let score = maxsim_vecs(&query_tokens, &doc_tokens);
 
 ## API
 
-### Similarity
+### Similarity (SIMD-accelerated)
 
 | Function | Input | Notes |
 |----------|-------|-------|
@@ -60,31 +73,6 @@ let score = maxsim_vecs(&query_tokens, &doc_tokens);
 | `top_k_indices(scores, k)` | Top-k by score |
 | `blend(a, b, α)` | Linear interpolation |
 
-### Traits
-
-```rust
-// Cross-encoder: implement this
-trait CrossEncoderModel {
-    fn score(&self, query: &str, doc: &str) -> f32;
-}
-
-// Token pooling: implement this or use builtins
-trait Pooler {
-    fn pool(&self, tokens: &[Vec<f32>], target: usize) -> Vec<Vec<f32>>;
-}
-```
-
-### Types
-
-```rust
-// Compile-time normalized guarantee
-let n: Normalized = normalize(&v)?;
-n.dot(&n) == 1.0
-
-// Masked tokens (attention mask applied)
-let m = MaskedTokens::with_mask(&tokens, &mask);
-```
-
 ## How It Works
 
 ### MaxSim (Late Interaction)
@@ -115,7 +103,7 @@ Quality loss measured on MS MARCO (Clavie et al., 2024).
 
 ## Benchmarks
 
-M3 Max, `cargo bench`:
+Apple M3 Max, `cargo bench`:
 
 | Operation | Dim | Time |
 |-----------|-----|------|
@@ -127,6 +115,22 @@ M3 Max, `cargo bench`:
 | `maxsim` (pooled 2x) | 32q×64d×128dim | 25μs |
 | `maxsim` (pooled 4x) | 32q×32d×128dim | 12μs |
 
+## For Library Authors
+
+If you're building a vector database or search pipeline:
+
+**Depend on it:**
+```toml
+rank-refine = "0.7"
+```
+
+**Or vendor the SIMD code:**
+- `src/simd.rs` is self-contained (~600 lines)
+- AVX2+FMA / NEON with portable fallback
+- No dependencies, copy-pasteable
+
+See [REFERENCE.md](REFERENCE.md) for algorithm details and edge cases.
+
 ## Features
 
 | Feature | Dependency | Purpose |
@@ -136,8 +140,9 @@ M3 Max, `cargo bench`:
 ## See Also
 
 - [rank-fusion](https://crates.io/crates/rank-fusion): merge ranked lists (no embeddings)
-- [DESIGN.md](DESIGN.md): architecture
-- [REFERENCE.md](REFERENCE.md): algorithms
+- [fastembed-rs](https://github.com/Anush008/fastembed-rs): generate embeddings
+- [DESIGN.md](DESIGN.md): architecture decisions
+- [REFERENCE.md](REFERENCE.md): algorithm reference
 
 ## License
 
