@@ -11,7 +11,8 @@ use rank_refine::simd::cosine;
 fn main() {
     // Search results with embeddings (after dense retrieval)
     // Note: embeddings should be normalized for cosine similarity
-    let results = [(
+    let results = [
+        (
             "python_async_intro",
             embed("python async await tutorial introduction"),
         ),
@@ -33,7 +34,8 @@ fn main() {
         (
             "java_concurrency",
             embed("java concurrency executors threads"),
-        )];
+        ),
+    ];
 
     // Relevance scores from retrieval (higher = more relevant)
     let scores: Vec<f32> = vec![0.95, 0.93, 0.91, 0.85, 0.82, 0.78, 0.75, 0.70];
