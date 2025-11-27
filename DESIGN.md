@@ -140,6 +140,14 @@ From Clavié et al. (2024). Quality loss measured on MS MARCO and BEIR.
 
 **Key insight:** Pooling is index-time only. Queries stay full resolution.
 
+## Future Directions
+
+- **Token Importance Weighting**: Learnable per-token weights for MaxSim
+- **2D Matryoshka**: Layer + dimension truncation for faster inference
+- **Residual Compression**: ColBERTv2-style centroid + residual storage
+
+---
+
 ## Why One Crate?
 
 We considered `rank-select` for diversity. Arguments against:
@@ -170,9 +178,11 @@ Mathematical distinction is documented, but practical separation isn't justified
 - Nogueira & Cho (2019). [BERT for Passage Reranking](https://arxiv.org/abs/1901.04085)
 - Kusupati et al. (2022). [Matryoshka Embeddings](https://arxiv.org/abs/2205.13147)
 - Li et al. (2024). [2D Matryoshka Embeddings](https://arxiv.org/abs/2402.14776) — layer+dim truncation
+- Archish et al. (2025). [Token Importance Weighting](https://arxiv.org/abs/2511.16106) — weighted MaxSim
 
 ### Diversity
 - Carbonell & Goldstein (1998). [MMR](https://dl.acm.org/doi/10.1145/290941.291025)
+- Gao & Zhang (2024). [VRSD](https://arxiv.org/abs/2407.04573) — lambda-free diversity
 - Nemhauser et al. (1978). [Submodular Maximization](https://link.springer.com/article/10.1007/BF01588971)
 
 ### Token Pooling

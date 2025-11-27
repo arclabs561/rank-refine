@@ -9,6 +9,12 @@
 //!
 //! All SIMD implementations are tested against the portable fallback
 //! to ensure identical results (within floating-point tolerance).
+//!
+//! # Performance Notes
+//!
+//! - Vectors shorter than 16 dimensions use portable code (SIMD overhead not worthwhile)
+//! - Subnormal/denormalized floats (~< 1e-38) can cause 100x+ slowdowns in SIMD
+//! - Unit-normalized embeddings avoid subnormal issues in practice
 
 // Minimum vector dimension for SIMD to be worthwhile.
 // Below this, function call overhead outweighs SIMD benefits.

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.7.24] - 2025-11-27
+
+### Added
+- Token importance weighting (Nov 2025) documented as future direction
+- MMR lambda parameter guide with research citations
+- Subnormal float performance warning in SIMD docs
+- VRSD (2024) lambda-free diversity reference
+
+### Fixed
+- NaN ordering in REFERENCE.md (NaN sorts last, not first)
+
 ## [0.7.23] - 2025-11-27
 
 ### Changed

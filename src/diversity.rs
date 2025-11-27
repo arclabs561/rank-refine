@@ -10,6 +10,17 @@
 //! | [`mmr`] | General diversity-relevance tradeoff |
 //! | [`mmr_cosine`] | When you have raw embeddings |
 //!
+//! # Lambda Parameter Guide
+//!
+//! | Value | Use Case |
+//! |-------|----------|
+//! | 0.3–0.5 | Exploratory search, discovery |
+//! | 0.5 | Balanced default (RAG systems) |
+//! | 0.7–0.9 | Precision search, specific intent |
+//!
+//! Research (VRSD, 2024) shows λ=0.5 is a reasonable default, but
+//! optimal value depends on candidate distribution in embedding space.
+//!
 //! # The Diversity Problem
 //!
 //! Given top-100 from retrieval, many results may be near-duplicates.

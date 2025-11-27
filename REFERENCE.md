@@ -186,6 +186,31 @@ Reference: [Li et al., 2024](https://arxiv.org/abs/2402.14776)
 
 ---
 
+## Maximal Marginal Relevance (MMR)
+
+Balances relevance and diversity via iterative selection:
+
+$$\text{MMR}(d_i) = \lambda \cdot \text{rel}(d_i, q) - (1-\lambda) \cdot \max_{d_j \in S} \text{sim}(d_i, d_j)$$
+
+### Lambda Parameter
+
+| λ Value | Effect | Use Case |
+|---------|--------|----------|
+| 0.3–0.5 | Diversity-biased | Exploration, discovery |
+| 0.5 | Balanced | General purpose, RAG |
+| 0.7–0.9 | Relevance-biased | Precision search |
+
+### Research Notes
+
+- **VRSD (Gao & Zhang, 2024)**: Proves optimal λ depends on candidate geometry
+- No universal optimal exists; λ=0.5 is a reasonable default
+- For RAG: 0.4–0.6 range shows best context utilization
+- Computational: O(k × n) for k selections from n candidates
+
+Reference: [Carbonell & Goldstein, 1998](https://www.cs.cmu.edu/~jgc/publication/The_Use_MMR_Diversity_Based_LTMIR_1998.pdf)
+
+---
+
 ## SIMD Implementation
 
 ### Dispatch Strategy
