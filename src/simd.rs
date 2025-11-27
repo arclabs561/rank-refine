@@ -294,7 +294,7 @@ pub fn maxsim_cosine_vecs(query_tokens: &[Vec<f32>], doc_tokens: &[Vec<f32>]) ->
     maxsim_cosine(&q, &d)
 }
 
-/// Batch MaxSim: score a query against multiple documents.
+/// Batch `MaxSim`: score a query against multiple documents.
 ///
 /// Returns a vector of scores, one per document. More efficient than
 /// calling `maxsim` in a loop when you have many documents.
@@ -327,7 +327,7 @@ pub fn maxsim_batch(query: &[Vec<f32>], docs: &[Vec<Vec<f32>>]) -> Vec<f32> {
         .collect()
 }
 
-/// Batch MaxSim with cosine similarity.
+/// Batch `MaxSim` with cosine similarity.
 ///
 /// See [`maxsim`] for details. **Not commutative** — query must be first argument.
 #[must_use]
@@ -345,15 +345,15 @@ pub fn maxsim_cosine_batch(query: &[Vec<f32>], docs: &[Vec<Vec<f32>>]) -> Vec<f3
 // Score normalization utilities
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Normalize a MaxSim score to approximately \[0, 1\].
+/// Normalize a `MaxSim` score to approximately \[0, 1\].
 ///
-/// MaxSim scores are unbounded: `score ∈ [0, query_token_count]`.
-/// This function divides by `query_maxlen` (typically 32 for ColBERT models)
+/// `MaxSim` scores are unbounded: `score ∈ [0, query_token_count]`.
+/// This function divides by `query_maxlen` (typically 32 for `ColBERT` models)
 /// to produce comparable scores across different query lengths.
 ///
 /// # Arguments
 ///
-/// * `score` - Raw MaxSim score
+/// * `score` - Raw `MaxSim` score
 /// * `query_maxlen` - Maximum query length the model was trained with (typically 32)
 ///
 /// # Example
@@ -428,7 +428,7 @@ pub fn softmax_scores(scores: &[f32]) -> Vec<f32> {
     exp_scores.iter().map(|s| s / sum).collect()
 }
 
-/// Normalize a batch of MaxSim scores.
+/// Normalize a batch of `MaxSim` scores.
 ///
 /// Convenience function that applies [`normalize_maxsim`] to each score.
 #[inline]

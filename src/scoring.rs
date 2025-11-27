@@ -9,7 +9,7 @@
 //! | Method | Speed | Quality | Storage |
 //! |--------|-------|---------|---------|
 //! | **Dense** | Fastest | Good | 1 vector/doc |
-//! | **MaxSim** | Medium | Better | N vectors/doc |
+//! | `MaxSim` | Medium | Better | N vectors/doc |
 //! | **Cross-encoder** | Slowest | Best | No pre-compute |
 //!
 //! # The Retrieval Pipeline
@@ -30,7 +30,7 @@
 //! # When to Use What
 //!
 //! - **Dense (`Scorer`)**: First-stage retrieval, millions of candidates
-//! - **MaxSim (`TokenScorer`)**: Reranking 100-1000 candidates from dense search
+//! - **`MaxSim`** (`TokenScorer`): Reranking 100-1000 candidates from dense search
 //! - **Cross-encoder**: Final top-10 refinement when quality matters most
 //!
 //! # Example
@@ -195,7 +195,7 @@ impl LateInteractionScorer {
 /// - `score([q], [d]) = dot(q, d)` — single-token case reduces to dense
 /// - Adding a duplicate doc token doesn't change score (max is idempotent)
 pub trait TokenScorer {
-    /// Score using late interaction (MaxSim: sum of max similarities).
+    /// Score using late interaction (`MaxSim`: sum of max similarities).
     fn score_tokens(&self, query: &[&[f32]], doc: &[&[f32]]) -> f32;
 
     /// Score with owned vectors (convenience wrapper).

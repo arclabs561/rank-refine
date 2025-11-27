@@ -11,7 +11,7 @@
 //! many contrastive models). The `dot` method is then cosine similarity.
 //!
 //! **`MaskedTokens`**: When batching variable-length token sequences for late
-//! interaction (MaxSim). Padding tokens are excluded from scoring.
+//! interaction (`MaxSim`). Padding tokens are excluded from scoring.
 //!
 //! ## Example
 //!
@@ -112,7 +112,7 @@ pub fn normalize_or_zero(v: &[f32]) -> Normalized {
 
 /// Token embeddings with explicit padding mask.
 ///
-/// When batching token sequences for late interaction (MaxSim), shorter
+/// When batching token sequences for late interaction (`MaxSim`), shorter
 /// sequences need padding. The mask indicates which tokens are real vs padding.
 ///
 /// # Invariant
@@ -191,7 +191,7 @@ impl MaskedTokens {
     }
 }
 
-/// MaxSim with masking support.
+/// `MaxSim` with masking support.
 ///
 /// Ignores padding tokens (where mask is false) in both query and document.
 #[must_use]

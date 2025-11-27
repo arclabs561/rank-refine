@@ -1,4 +1,4 @@
-//! Late interaction scoring via MaxSim.
+//! Late interaction scoring via `MaxSim`.
 //!
 //! # What is Late Interaction?
 //!
@@ -12,25 +12,25 @@
 //!
 //! # Supported Models
 //!
-//! MaxSim is **model-agnostic**. Any multi-vector encoder works:
+//! `MaxSim` is **model-agnostic**. Any multi-vector encoder works:
 //!
 //! | Model | Input | Notes |
 //! |-------|-------|-------|
-//! | [ColBERT](https://arxiv.org/abs/2004.12832) | Text | Original late interaction |
-//! | [ColBERTv2](https://arxiv.org/abs/2112.01488) | Text | + residual compression |
+//! | [`ColBERT`](https://arxiv.org/abs/2004.12832) | Text | Original late interaction |
+//! | [`ColBERT`v2](https://arxiv.org/abs/2112.01488) | Text | + residual compression |
 //! | [ColPali](https://arxiv.org/abs/2407.01449) | Document images | Vision-language, ICLR 2025 |
-//! | [Jina-ColBERT-v2](https://huggingface.co/jinaai/jina-colbert-v2) | Text | Multilingual + Matryoshka |
+//! | [Jina-`ColBERT`-v2](https://huggingface.co/jinaai/jina-colbert-v2) | Text | Multilingual + Matryoshka |
 //!
 //! This crate scores embeddings — it doesn't care where they came from.
 //!
 //! # Assumptions
 //!
-//! - **L2-normalized vectors**: Most ColBERT models output unit-length embeddings.
+//! - **L2-normalized vectors**: Most `ColBERT` models output unit-length embeddings.
 //!   With normalized vectors, dot product equals cosine similarity.
 //! - **Role markers applied during encoding**: `[Q]`/`[D]` tokens are added by
 //!   the encoder, not by this crate. We score the resulting embeddings.
 //!
-//! # How MaxSim Works
+//! # How `MaxSim` Works
 //!
 //! For each query token, find its best-matching document token, then sum:
 //!
@@ -128,7 +128,7 @@ use crate::{simd, RefineConfig};
 ///
 /// # Arguments
 ///
-/// * `tokens` - Document token embeddings (assumed L2-normalized for `ColBERT`)
+/// * `tokens` - Document token embeddings (assumed L2-normalized for ``ColBERT``)
 /// * `pool_factor` - Target compression ratio (2 = 50% reduction, 3 = 66%, etc.)
 #[must_use]
 pub fn pool_tokens(tokens: &[Vec<f32>], pool_factor: usize) -> Vec<Vec<f32>> {
@@ -414,9 +414,9 @@ fn mean_pool(tokens: &[Vec<f32>], indices: &[usize]) -> Vec<f32> {
 // Ranking & Refinement
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Rank documents by `MaxSim` score against query tokens.
+/// Rank documents by ``MaxSim`` score against query tokens.
 ///
-/// Returns documents sorted by descending `MaxSim` score.
+/// Returns documents sorted by descending ``MaxSim`` score.
 #[must_use]
 pub fn rank<I: Clone>(query: &[Vec<f32>], docs: &[(I, Vec<Vec<f32>>)]) -> Vec<(I, f32)> {
     rank_with_top_k(query, docs, None)
@@ -449,14 +449,14 @@ pub fn rank_with_top_k<I: Clone>(
     results
 }
 
-/// Refine candidates using `MaxSim`, blending with original scores.
+/// Refine candidates using ``MaxSim``, blending with original scores.
 ///
 /// # Arguments
 ///
 /// * `candidates` - Initial retrieval results (id, score)
 /// * `query` - Query token embeddings
 /// * `docs` - Document token embeddings
-/// * `alpha` - Weight for original score (0.0 = all `MaxSim`, 1.0 = all original)
+/// * `alpha` - Weight for original score (0.0 = all ``MaxSim``, 1.0 = all original)
 ///
 /// # Note
 ///
@@ -601,7 +601,7 @@ impl<I> TokenIndex<I> {
 }
 
 impl<I: Clone> TokenIndex<I> {
-    /// Score a query against all entries using MaxSim.
+    /// Score a query against all entries using `MaxSim`.
     ///
     /// Returns `(id, score)` pairs in index order (not sorted).
     /// Use [`top_k`](Self::top_k) or [`rank`](Self::rank) for sorted results.
@@ -617,7 +617,7 @@ impl<I: Clone> TokenIndex<I> {
             .collect()
     }
 
-    /// Score a query against all entries using MaxSim with cosine similarity.
+    /// Score a query against all entries using `MaxSim` with cosine similarity.
     #[must_use]
     pub fn score_all_cosine(&self, query: &[Vec<f32>]) -> Vec<(I, f32)> {
         let query_refs = crate::as_slices(query);
@@ -1425,7 +1425,7 @@ mod proptests {
             prop_assert_eq!(&pooled[1], &tokens[1], "Second protected token should be preserved");
         }
 
-        /// `MaxSim` score quality: pooling shouldn't drastically reduce score
+        /// ``MaxSim`` score quality: pooling shouldn't drastically reduce score
         #[test]
         fn pool_maintains_score_quality(dim in 8usize..16) {
             // Create a query and doc with good alignment
@@ -1472,7 +1472,7 @@ mod proptests {
         }
 
         // ─────────────────────────────────────────────────────────────────────────
-        // Domain-aware tests based on ColBERT pooling research (Clavié et al. 2024)
+        // Domain-aware tests based on `ColBERT` pooling research (Clavié et al. 2024)
         // ─────────────────────────────────────────────────────────────────────────
 
         /// Pooling preserves total information: sum of pooled vectors ≈ scaled sum of original
@@ -1541,7 +1541,7 @@ mod proptests {
             );
         }
 
-        /// `MaxSim` is NOT commutative: swap(query, doc) changes result
+        /// ``MaxSim`` is NOT commutative: swap(query, doc) changes result
         /// This is a fundamental property of late interaction scoring
         #[test]
         fn maxsim_not_commutative(dim in 4usize..8) {
@@ -1565,7 +1565,7 @@ mod proptests {
             prop_assert!(score_ab.is_finite() && score_ba.is_finite());
         }
 
-        /// Adding more doc tokens can only maintain or improve MaxSim
+        /// Adding more doc tokens can only maintain or improve `MaxSim`
         /// (more opportunities for each query token to find a match)
         #[test]
         fn more_doc_tokens_higher_score(dim in 4usize..8) {
@@ -1717,7 +1717,7 @@ mod proptests {
             prop_assert_eq!(p3.len(), 1);
         }
 
-        /// `MaxSim` with pooled docs still produces finite scores
+        /// ``MaxSim`` with pooled docs still produces finite scores
         #[test]
         fn maxsim_pooled_finite(n_query in 1usize..4, n_doc in 2usize..8, dim in 4usize..8) {
             let query: Vec<Vec<f32>> = (0..n_query)
@@ -1733,7 +1733,7 @@ mod proptests {
             let p_refs: Vec<&[f32]> = pooled.iter().map(Vec::as_slice).collect();
 
             let score = crate::simd::maxsim(&q_refs, &p_refs);
-            prop_assert!(score.is_finite(), "MaxSim with pooled docs returned {}", score);
+            prop_assert!(score.is_finite(), "`MaxSim` with pooled docs returned {}", score);
         }
 
         // ─────────────────────────────────────────────────────────────────────────

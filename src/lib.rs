@@ -10,7 +10,7 @@
 //! // Dense scoring
 //! let score = simd::cosine(&[1.0, 0.0], &[0.707, 0.707]);
 //!
-//! // Late interaction (ColBERT MaxSim)
+//! // Late interaction (`ColBERT` `MaxSim`)
 //! let query = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
 //! let doc = vec![vec![0.9, 0.1], vec![0.1, 0.9]];
 //! let score = simd::maxsim_vecs(&query, &doc);
@@ -21,7 +21,7 @@
 //! | Module | Purpose |
 //! |--------|---------|
 //! | [`simd`] | SIMD vector ops (dot, cosine, maxsim) |
-//! | [`colbert`] | Late interaction (MaxSim), token pooling |
+//! | [`colbert`] | Late interaction (`MaxSim`), token pooling |
 //! | [`diversity`] | MMR + DPP diversity selection |
 //! | [`crossencoder`] | Cross-encoder trait |
 //! | [`matryoshka`] | MRL tail refinement |
@@ -48,7 +48,7 @@ pub mod prelude {
     // Score utilities
     pub use crate::simd::{normalize_maxsim, softmax_scores, top_k_indices};
 
-    // ColBERT
+    // `ColBERT`
     pub use crate::colbert::{pool_tokens, rank as colbert_rank};
 
     // Diversity
@@ -69,7 +69,7 @@ pub enum RefineError {
     InvalidHeadDims {
         /// The head dimension that was provided.
         head_dims: usize,
-        /// The query length (must be > head_dims).
+        /// The query length (must be > `head_dims`).
         query_len: usize,
     },
     /// Vector dimensions must match.

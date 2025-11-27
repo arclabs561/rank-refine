@@ -164,12 +164,14 @@ Example where DPP beats MMR:
 - MMR might reject both B and C (each too similar to A)
 - DPP recognizes {A, B, C} spans good volume because B and C are different
 
-**Fast Greedy MAP:** Exact DPP is NP-hard. We use the greedy approximation:
+**Greedy DPP:** Exact DPP is NP-hard. We use the standard greedy approximation:
 1. Select item maximizing $q_i \cdot \|v_i^\perp\|$ (quality times orthogonal component)
 2. Update residuals via Gram-Schmidt-style projection
 3. Repeat
 
-**Reference:** [Fast Greedy MAP Inference for DPP](https://papers.nips.cc/paper/7805-fast-greedy-map-inference-for-determinantal-point-process-to-improve-recommendation-diversity.pdf) (NeurIPS 2018)
+**Complexity:** O(n²k) where n = candidates, k = items to select.
+
+**Reference:** [k-DPP](https://arxiv.org/abs/1207.6083) (Kulesza & Taskar 2012). The "Fast Greedy MAP" variant (Chen et al. 2018) uses Cholesky updates for O(nk²) but requires more memory; for typical k ≪ n our approach is sufficient.
 
 ## SIMD Implementation
 
