@@ -84,7 +84,7 @@ pub fn norm(v: &[f32]) -> f32 {
 
 /// Cosine similarity between two vectors.
 ///
-/// Returns 0.0 if either vector has effectively-zero norm (< [`NORM_EPSILON`]).
+/// Returns 0.0 if either vector has effectively-zero norm (< 1e-9).
 /// Result is in `[-1, 1]` for valid input, but floating-point error can push
 /// slightly outside this range; clamp if strict bounds are required.
 #[inline]
