@@ -1,143 +1,144 @@
 # Design
 
-Two crates for retrieval pipelines:
+## Mathematical Foundation
+
+This crate addresses two mathematically distinct problems:
+
+| Problem | Field | Function Type | This Module |
+|---------|-------|---------------|-------------|
+| **Scoring** | Learning to Rank | f(query, doc) → ℝ | `simd`, `colbert`, `matryoshka`, `crossencoder` |
+| **Selection** | Submodular Optimization | f(set) → ℝ | `diversity` |
+
+Both require looking at document **content** (embeddings), unlike rank fusion which only looks at scores/ranks.
+
+## Scoring (Learning to Rank)
+
+**Problem**: Given a query and candidate documents, compute relevance scores.
+
+Three paradigms in increasing complexity and quality:
 
 ```
-Retrieve → Fuse (rank-fusion) → Refine (this crate) → Top-K
+┌─────────────────────────────────────────────────────────────────────┐
+│                        SCORING PARADIGMS                            │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│   Dense             Late Interaction       Cross-encoder            │
+│   ──────────────    ─────────────────      ──────────────           │
+│   q · d             Σ_i max_j(q_i · d_j)   Model(q || d)            │
+│                                                                     │
+│   O(d)              O(q × d × tokens)      O(n) inference           │
+│                                                                     │
+│   Single vector     Token embeddings       Full text pair           │
+│   per doc           per doc                (expensive)              │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-## Why a Dedicated Reranking Library?
+### Dense Scoring (simd module)
 
-Reranking is architecturally distinct from both retrieval and storage. Research and
-industry practice (2024) converge on separating these concerns:
-
-| Concern | Optimized For | Where |
-|---------|---------------|-------|
-| Storage | Billions of vectors, fast ANN | Vector database (qdrant, milvus) |
-| Inference | Transformer models, batching | Embedding service (fastembed, ort) |
-| **Reranking** | Small candidate sets, SIMD scoring | **Dedicated library** |
-
-**Why not embed reranking in the vector database?**
-
-1. **Computational mismatch**: Databases optimize for ANN over millions; reranking
-   optimizes for precise scoring of 20-100 candidates.
-
-2. **Vendor independence**: Swap databases without rewriting reranking logic.
-
-3. **Pluggable strategies**: Easily switch between dense/late-interaction/cross-encoder
-   without touching infrastructure.
-
-4. **Independent scaling**: Run reranking on CPU while database uses GPU/specialized
-   hardware.
-
-From [DynamicRAG (Sun et al., 2025)](https://arxiv.org/abs/2505.07233): reranking is
-"crucial but often under-explored" — separating it enables focused optimization.
-
-## Why Late Interaction?
-
-Dense retrieval compresses a document to a single vector, losing token-level semantics.
-Late interaction preserves this information:
-
-| Approach | Representation | Score Cost | Quality |
-|----------|----------------|------------|---------|
-| Dense | Single `Vec<f32>` | O(d) dot | Good |
-| Late Interaction | `Vec<Vec<f32>>` | O(q × d) MaxSim | Better |
-| Cross-encoder | Full text pair | O(n) inference | Best |
-
-For example, "What is the capital of France?" with dense retrieval might match documents
-about capitals in general. Late interaction's token-level matching finds documents where
-"capital" and "France" co-occur with high similarity.
-
-**Trade-off**: Late interaction costs more storage (128 tokens × 128 dims vs 1 × 768)
-but yields 5-15% better recall on complex queries.
-
-## Indexing vs Query Time
-
-Late interaction has distinct **indexing** and **query** phases:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  INDEXING (Offline, One-time)                                   │
-│                                                                 │
-│  Document → Encode → Reduce Dims → Pool Tokens → Quantize → DB  │
-│             (model)  (768→128)     (cluster)    (2-bit)         │
-└─────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────┐
-│  QUERY (Online, Per-request)                                    │
-│                                                                 │
-│  Query → Encode → Candidate Gen → MaxSim Score → Top-K          │
-│          (model)  (ANN/PLAID)     (this crate)                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-**What this crate provides**:
-- Query-time: `maxsim`, `rank`, `refine` (fast, CPU-optimized)
-- Indexing-time: `pool_tokens`, `pool_tokens_hierarchical` (run once, store results)
-
-**What you bring**:
-- Embeddings (from fastembed, ort, sentence-transformers, etc.)
-- Storage (qdrant, milvus, in-memory Vec, etc.)
-- Candidate generation (ANN from your vector DB)
-
-## Token Pooling
-
-Storage can be reduced via token pooling without significant quality loss. From
-[Clavié et al. (2024)](https://arxiv.org/abs/2409.14683):
-
-- **Factor 2 (50% reduction)**: Virtually no retrieval degradation
-- **Factor 3-4 (66-75% reduction)**: <5% degradation on most datasets
-
-Key insight: **Pooling happens at indexing time only** — documents are pooled once,
-stored, and then scored against un-pooled queries. No query-time processing needed.
-
-### Clustering Methods
-
-Research shows **Ward's hierarchical clustering** outperforms k-means for embedding pooling:
-
-| Method | Quality | Speed | Best For |
-|--------|---------|-------|----------|
-| Ward (hierarchical) | Highest | O(n²) | Aggressive compression (4x+) |
-| Greedy clustering | Good | O(n) | Moderate compression (2-3x) |
-| Sequential | Lowest | O(n) | Speed-critical, position-aware |
-
-Ward produces more **compact, homogeneous clusters** and handles ambiguous tokens better.
-
-### Implementation
+The simplest: one embedding per document.
 
 ```rust
-// Aggressive compression with highest quality
-#[cfg(feature = "hierarchical")]
-let pooled = pool_tokens_hierarchical(&tokens, 4);
-
-// Balanced (default)
-let pooled = pool_tokens(&tokens, 2);
-
-// Preserve special tokens
-let pooled = pool_tokens_with_protected(&tokens, 2, 2); // protect first 2
+let score = dot(&query_embedding, &doc_embedding);
+let score = cosine(&query_embedding, &doc_embedding);
 ```
 
-Protected tokens (like `[CLS]` and `[D]` markers) can be preserved during pooling.
+**When to use**: Bi-encoder embeddings (Sentence-BERT, E5, etc.). Fast, SIMD-accelerated.
 
-## Modules
+### Late Interaction (colbert module)
 
-- **matryoshka** — Two-stage retrieval: coarse with head dims, refine with tail
-- **colbert** — MaxSim late interaction: `Σ_q max_d(q·d)`, with token pooling
-- **crossencoder** — BYOM trait for transformer-based scoring
-- **simd** — AVX2+FMA (x86_64), NEON (aarch64), portable fallback
-- **scoring** — Unified `Scorer` and `TokenScorer` traits for interoperability
+Token-level embeddings preserve fine-grained semantics. MaxSim scoring:
 
-### Matryoshka Note
+```
+score = Σ_{q ∈ Q} max_{d ∈ D} sim(q, d)
+```
 
-Current implementation supports **dimension truncation** (standard MRL). The emerging
-**2D Matryoshka** approach (Wang et al., 2024) adds **layer truncation** — using embeddings
-from intermediate transformer layers for even more flexibility. This would require:
+For each query token, find the most similar document token and sum.
 
-1. Models trained with 2D Matryoshka loss
-2. API to specify both `target_dims` and `target_layer`
+```rust
+let score = maxsim(&query_tokens, &doc_tokens);
+let ranked = rank(&query_tokens, &documents);
+```
 
-The current `matryoshka::refine` function handles dimension-based refinement correctly
-and is compatible with any MRL-trained model (e.g., Nomic, Cohere v3, OpenAI text-embedding-3).
+**When to use**: ColBERT-style models. 5-15% better recall on complex queries.
+
+### Matryoshka Refinement (matryoshka module)
+
+For [Matryoshka Representation Learning](https://arxiv.org/abs/2205.13147) embeddings.
+
+Coarse search with prefix dimensions → refine with tail dimensions:
+
+```rust
+// First 256 dims for coarse ranking
+let coarse_scores = candidates.iter().map(|d| dot(&q[..256], &d[..256]));
+
+// Full 768 dims to refine top candidates
+let refined = mrl_refine(query, candidates, config);
+```
+
+**When to use**: MRL-trained models (Nomic, Cohere v3, OpenAI text-embedding-3).
+
+### Cross-encoder (crossencoder module)
+
+The most accurate but most expensive. Requires running a transformer on each (query, document) pair.
+
+```rust
+impl CrossEncoderModel for MyModel {
+    fn score(&self, query: &str, document: &str) -> f32 {
+        // Your inference code here
+    }
+}
+```
+
+**When to use**: Final reranking stage. ~5x better than dense on MS MARCO.
+
+## Selection (Submodular Optimization)
+
+**Problem**: Given scored candidates, select a diverse subset.
+
+This is fundamentally different from scoring:
+- Scoring: f(query, doc) → ℝ  (independent per doc)
+- Selection: f(S ⊆ candidates) → ℝ  (depends on what's already selected)
+
+### The Submodular Structure
+
+Adding an item has **diminishing returns**:
+
+```
+f(S ∪ {x}) - f(S) ≤ f(T ∪ {x}) - f(T)  when T ⊆ S
+```
+
+If you've already selected similar items, a new item adds less value.
+
+### MMR (diversity module)
+
+[Maximal Marginal Relevance](https://dl.acm.org/doi/10.1145/290941.291025) balances relevance and diversity:
+
+```
+MMR = argmax_{d ∈ R\S} [ λ · rel(d) - (1-λ) · max_{s ∈ S} sim(d, s) ]
+```
+
+- λ=1.0: Pure relevance (no diversity)
+- λ=0.5: Balanced
+- λ=0.0: Pure diversity (avoid similar items)
+
+```rust
+let diverse = mmr_cosine(&relevance_scores, &embeddings, MmrConfig::default());
+```
+
+**When to use**: Search results, recommendations, summarization.
+
+## Why One Crate, Not Two?
+
+We considered separating scoring and selection into `rank-refine` and `rank-select`.
+
+Arguments for keeping them together:
+
+1. **Shared SIMD**: Both use `dot`, `cosine`, `maxsim` from simd module
+2. **Pipeline coupling**: Users typically score → filter → diversify in sequence
+3. **Code size**: MMR is ~150 lines, not enough for a separate crate
+
+The mathematical distinction is documented, but practical concerns favor a single crate.
 
 ## Architecture
 
@@ -161,121 +162,109 @@ and is compatible with any MRL-trained model (e.g., Nomic, Cohere v3, OpenAI tex
                       ┌──────────────────┐
                       │      simd        │
                       │  (dot, cosine,   │
-                      │   maxsim)        │
+                      │   maxsim, norm)  │
+                      └────────┬─────────┘
+                               │
+                               ▼
+                      ┌──────────────────┐
+                      │    diversity     │
+                      │  (MMR, selection)│
                       └──────────────────┘
 ```
 
-## Unit Normalization
+## SIMD Implementation
 
-Many embedding models (especially contrastively trained ones) output unit-normalized
-vectors. For unit vectors: `dot(a, b) = cosine(a, b)`.
+Automatic dispatch based on CPU features:
 
-The `embedding` module provides:
+| Platform | Features | Method |
+|----------|----------|--------|
+| x86_64 | AVX2 + FMA | 256-bit vectors, fused multiply-add |
+| x86_64 | SSE4.1 | 128-bit vectors |
+| aarch64 | NEON | 128-bit vectors |
+| other | — | Portable scalar fallback |
 
-- **`Normalized`** — Wrapper for unit-normalized vectors where `dot = cosine`
-- **`MaskedTokens`** — Token embeddings with padding mask for batched MaxSim
+Threshold: SIMD only used when dimension ≥ 16 (overhead not worth it for small vectors).
 
-```rust
-// Normalized embeddings: dot = cosine
-let q = normalize(&[3.0, 4.0]).unwrap();
-let d = normalize(&[1.0, 0.0]).unwrap();
-let sim = q.dot(&d); // This IS cosine similarity
+## Token Pooling
 
-// Masked tokens for batched processing with padding
-let masked = MaskedTokens::new(tokens, mask);
-let score = maxsim_masked(&query_tokens, &masked);
-```
+For ColBERT-style models, token count dominates storage. Pooling reduces tokens:
 
-**Scope note**: Training paradigm (contrastive, instruction-tuned, etc.) is the
-embedding model's concern, not this crate's. By the time embeddings reach here,
-they're just `&[f32]`.
+| Factor | Reduction | Quality Loss |
+|--------|-----------|--------------|
+| 2x | 50% | ~0% |
+| 4x | 75% | <5% |
+| 8x | 87.5% | <10% |
 
-## Trait Design
-
-The `scoring` module provides unified traits:
+From [Clavié et al., 2024](https://arxiv.org/abs/2409.14683).
 
 ```rust
-pub trait Scorer {
-    fn score(&self, query: &[f32], doc: &[f32]) -> f32;
-    fn rank<I: Clone>(&self, query: &[f32], docs: &[(I, &[f32])]) -> Vec<(I, f32)>;
-}
-
-pub trait TokenScorer {
-    fn score_tokens(&self, query: &[&[f32]], doc: &[&[f32]]) -> f32;
-    fn rank_tokens<I: Clone>(&self, query: &[&[f32]], docs: &[(I, &[&[f32]])]) -> Vec<(I, f32)>;
-}
+let pooled = pool_tokens(&doc_tokens, 4); // 75% reduction
 ```
 
-Implementations: `DenseScorer` (Dot, Cosine) and `LateInteractionScorer` (MaxSimDot, MaxSimCosine).
+Pooling happens at **indexing time only** — queries stay full resolution.
 
-## NaN Handling
+## API Design
 
-Sorting uses `f32::total_cmp` for deterministic ordering:
+### Generic over ID Type
 
-- NaN values sort before all other values
-- This ensures consistent behavior regardless of input quality
-- Users should filter NaN scores if they appear (indicates bad embeddings)
+```rust
+rank::<&str>(&query, &[("doc1", &emb1), ("doc2", &emb2)])
+rank::<u64>(&query, &[(1, &emb1), (2, &emb2)])
+```
 
-## Implementation Comparison
+### Slice-Based (Zero-Copy)
 
-Based on review of production Rust implementations:
+```rust
+// No allocation — works on borrowed data
+let score = maxsim(&q_tokens, &d_tokens);
+```
 
-| Feature | qdrant | vindicator | fast-plaid | rank-refine |
-|---------|--------|------------|------------|-------------|
-| Focus | Vector DB | Rank fusion | PLAID GPU | Reranking |
-| SIMD | AVX, 4-way unroll | N/A | tch (GPU) | AVX+FMA |
-| Dim threshold | 16/32 | N/A | N/A | 16 |
-| NaN scores | N/A | noisy_float | N/A | `total_cmp` |
-| Token pooling | N/A | N/A | Quantization | Clustering |
-| Score collection | Vec | SmallVec<4> | Tensor | Vec |
+### BYOM (Bring Your Own Model)
 
-### Tricks Gleaned from Production Code
+No inference code bundled. Use fastembed, ort, candle, rust-bert, etc.
 
-**From qdrant** (22k stars):
-- Four-way loop unrolling in AVX (32 elements/iteration for dot product)
-- Separate `hsum256_ps` for horizontal sum
-- Dimension threshold to skip SIMD overhead for small vectors
+```rust
+// You provide embeddings
+let embeddings: Vec<Vec<f32>> = my_model.encode(&texts)?;
 
-**From PyLate** (LightOn):
-- `torch.einsum("ash,bth->abst", Q, D)` for batched MaxSim
-- Attention mask support for padding tokens
-- Separate `colbert_scores_pairwise` for 1:1 scoring
+// We score them
+let ranked = rank(&query_emb, &candidates);
+```
 
-**From ColPali** (illuin-tech):
-- `pad_sequence` for variable-length token batches
-- FastPLAID integration for indexed search
-- Both single-vector and multi-vector scoring in same API
+## Relationship to rank-fusion
 
-**From vindicator**:
-- `SmallVec<[_; 4]>` for score collection (avoids heap for small fusions)
-- `noisy_float::n32` for NaN-safe arithmetic (alternative to `total_cmp`)
-- Generic `SearchEntry` trait for flexible ID types
-
-**From fast-plaid**:
-- Memory-mapped ColBERT indices reduce RAM from 86GB to 8GB
-- Quantization-based compression as alternative to clustering
-
-### Our Design Choices
-
-1. **`total_cmp` over `noisy_float`**: Zero dependencies; works on stable Rust
-2. **Clustering over quantization**: Higher quality at same storage (research-backed)
-3. **Slice-based API**: Zero-copy where possible; user controls allocation
-4. **BYOM**: No inference code = smaller binary, flexible model choice
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           RETRIEVAL PIPELINE                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   Retrieval        Fusion           Scoring          Selection              │
+│   ─────────────    ───────────      ───────────      ───────────            │
+│   BM25 → list1  ─┐                                                          │
+│   Dense → list2 ─┼──▶ rank-fusion ──▶ rank-refine ──▶ rank-refine           │
+│   Sparse → list3 ┘    (combine)      (rescore)       (diversity.mmr)        │
+│                                                                             │
+│   Math field:      Social Choice    Learning to Rank  Submodular            │
+│   Uses content:    No               Yes               Yes (inter-item)      │
+│   Typical count:   1000s → 100      100 → 50          50 → 10               │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
 ## References
 
-### Core Techniques
-- [Matryoshka](https://arxiv.org/abs/2205.13147) — MRL embeddings (Kusupati et al., 2022)
-- [2D Matryoshka](https://arxiv.org/abs/2411.17299) — Layer + dimension truncation (Wang et al., 2024)
-- [ColBERT](https://arxiv.org/abs/2004.12832) — Late interaction retrieval (Khattab & Zaharia, 2020)
-- [PLAID](https://arxiv.org/abs/2205.09707) — Efficient ColBERT serving
+### Learning to Rank
+- [Liu, 2011](https://link.springer.com/book/10.1007/978-3-642-14267-3) — Learning to Rank for IR (textbook)
+- [Nogueira & Cho, 2019](https://arxiv.org/abs/1901.04085) — BERT for passage reranking
 
-### Token Pooling
-- [Token Pooling](https://arxiv.org/abs/2409.14683) — 50-75% storage reduction (Clavié et al., 2024)
-- [kodama](https://docs.rs/kodama) — Ward's hierarchical clustering for Rust
+### Late Interaction
+- [Khattab & Zaharia, 2020](https://arxiv.org/abs/2004.12832) — ColBERT
+- [Santhanam et al., 2022](https://arxiv.org/abs/2205.09707) — ColBERTv2
 
-### Production Systems
-- [ColBERT-serve](https://arxiv.org/abs/2501.02065) — Memory-mapped ColBERT (ECIR 2025)
-- [Jina-ColBERT-v2](https://arxiv.org/abs/2408.16672) — Multilingual + Matryoshka ColBERT
-- [fastembed-rs](https://docs.rs/fastembed) — Rust embedding generation via ONNX
-- [ort](https://docs.rs/ort) — ONNX Runtime bindings for cross-encoder inference
+### Matryoshka
+- [Kusupati et al., 2022](https://arxiv.org/abs/2205.13147) — MRL embeddings
+- [Wang et al., 2024](https://arxiv.org/abs/2411.17299) — 2D Matryoshka
+
+### Submodular Optimization
+- [Nemhauser et al., 1978](https://link.springer.com/article/10.1007/BF01588971) — Greedy approximation
+- [Carbonell & Goldstein, 1998](https://dl.acm.org/doi/10.1145/290941.291025) — MMR
+- [Krause & Golovin, 2014](https://las.inf.ethz.ch/files/krause12survey.pdf) — Submodular survey

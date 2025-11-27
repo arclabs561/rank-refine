@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.7.19] - 2025-11-27
+
+### Added
+- **`diversity` module**: MMR (Maximal Marginal Relevance) for diversity-aware reranking
+  - `mmr`: MMR with precomputed similarity matrix
+  - `mmr_cosine`: MMR with on-the-fly cosine similarity
+  - `MmrConfig`: Builder pattern for λ (relevance-diversity tradeoff) and k
+  - 7 unit tests for pure relevance, pure diversity, mixed, edge cases
+- Updated prelude with `mmr`, `mmr_cosine`, `MmrConfig` exports
+
 ## [0.7.18] - 2025-11-26
 
 ### Changed

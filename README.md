@@ -122,6 +122,23 @@ let scorer = DenseScorer::Cosine;
 let ranked = scorer.rank(&query_emb, &doc_refs);
 ```
 
+## Diversity Selection
+
+After scoring, you often want diverse results (not just the top-k most similar):
+
+```rust
+use rank_refine::diversity::{mmr_cosine, MmrConfig};
+
+// relevance_scores from your reranker
+// embeddings from your model
+let diverse = mmr_cosine(&relevance_scores, &embeddings, MmrConfig::balanced(10));
+```
+
+MMR (Maximal Marginal Relevance) balances relevance vs. novelty:
+- λ=1.0: Pure relevance (top-k by score)
+- λ=0.5: Balanced (default)
+- λ=0.0: Maximum diversity
+
 ## Modules
 
 | Module | Purpose |
@@ -131,12 +148,19 @@ let ranked = scorer.rank(&query_emb, &doc_refs);
 | `matryoshka` | MRL tail dimension refinement |
 | `crossencoder` | Trait for cross-encoder models |
 | `scoring` | Unified `Scorer`, `TokenScorer`, `Pooler` traits |
+| `diversity` | MMR for diverse result selection |
 
 ## Features
 
 | Feature | Description |
 |---------|-------------|
 | `hierarchical` | Ward's method clustering for better pooling at 4x+ compression |
+
+## Design
+
+See [DESIGN.md](DESIGN.md) for mathematical foundations:
+- **Scoring**: Learning to rank (f(query, doc) → score)
+- **Selection**: Submodular optimization (f(set) → diverse subset)
 
 ## Related
 
