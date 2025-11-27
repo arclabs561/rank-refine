@@ -292,7 +292,7 @@ Stage 2: Re-score using tail similarity → 10 final results
 
 Combine original (head-based) scores with tail similarity:
 
-$$\text{final} = \alpha \cdot \text{original} + (1-\alpha) \cdot \text{tail\_similarity}$$
+$$\text{final} = \alpha \cdot \text{original} + (1-\alpha) \cdot \text{tail similarity}$$
 
 | Alpha | Behavior |
 |-------|----------|
