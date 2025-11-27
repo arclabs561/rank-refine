@@ -169,7 +169,7 @@ Example where DPP beats MMR:
 2. Update residuals via Gram-Schmidt-style projection
 3. Repeat
 
-**Complexity:** O(n²k) where n = candidates, k = items to select.
+**Complexity:** O(k × n × d) where k = items to select, n = candidates, d = embedding dimension.
 
 **Reference:** [k-DPP](https://arxiv.org/abs/1207.6083) (Kulesza & Taskar 2012). The "Fast Greedy MAP" variant (Chen et al. 2018) uses Cholesky updates for O(nk²) but requires more memory; for typical k ≪ n our approach is sufficient.
 

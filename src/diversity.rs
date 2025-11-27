@@ -412,6 +412,12 @@ impl DppConfig {
     }
 
     /// Set alpha (relevance weight). Higher = more relevance, less diversity.
+    ///
+    /// # Note
+    ///
+    /// Quality scores are computed as `exp(relevance * alpha)`. Large values
+    /// of `relevance * alpha` (> ~88) will overflow to infinity. For relevance
+    /// scores in [0, 1], alpha up to ~80 is safe.
     #[must_use]
     pub fn with_alpha(mut self, alpha: f32) -> Self {
         self.alpha = alpha.max(0.0);
