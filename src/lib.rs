@@ -25,6 +25,7 @@
 //! - [`crossencoder`] — Cross-encoder trait for transformer models
 //! - [`scoring`] — Unified traits for dense/late-interaction scoring
 //! - [`embedding`] — Type-safe embedding wrappers (normalized, query/doc roles, masking)
+//! - [`diversity`] — MMR and diversity-aware reranking
 //!
 //! # Cross-Encoder Integration
 //!
@@ -59,6 +60,7 @@
 
 pub mod colbert;
 pub mod crossencoder;
+pub mod diversity;
 pub mod embedding;
 pub mod matryoshka;
 pub mod scoring;
@@ -90,6 +92,9 @@ pub mod prelude {
 
     // Cross-encoder
     pub use crate::crossencoder::CrossEncoderModel;
+
+    // Diversity reranking
+    pub use crate::diversity::{mmr, mmr_cosine, MmrConfig};
 
     // Utilities
     pub use crate::{as_slices, RefineError};

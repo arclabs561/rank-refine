@@ -26,9 +26,7 @@ pub fn dot(a: &[f32], b: &[f32]) -> f32 {
 
     #[cfg(target_arch = "x86_64")]
     {
-        if n >= MIN_DIM_SIMD
-            && is_x86_feature_detected!("avx2")
-            && is_x86_feature_detected!("fma")
+        if n >= MIN_DIM_SIMD && is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma")
         {
             // SAFETY: We've verified AVX2 and FMA are available via runtime detection.
             // The function handles mismatched lengths by using min(a.len(), b.len()).
