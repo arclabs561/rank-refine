@@ -42,7 +42,7 @@
 //! let score = scorer.score(&[1.0, 0.0], &[0.9, 0.1]);
 //! ```
 //!
-//! See [`REFERENCE.md`](https://github.com/your-repo/REFERENCE.md) for mathematical details.
+//! See [REFERENCE.md](https://github.com/arclabs561/rank-refine/blob/master/REFERENCE.md) for mathematical details.
 
 use crate::simd;
 

@@ -78,7 +78,7 @@ use crate::simd;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Configuration for Maximal Marginal Relevance (MMR).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MmrConfig {
     /// Trade-off between relevance and diversity.
     /// - `λ=1.0`: pure relevance (no diversity)
@@ -379,7 +379,7 @@ pub fn mmr_cosine<I: Clone, V: AsRef<[f32]>>(
 /// Internally, relevance is transformed as `exp(relevance × alpha)`, so:
 /// - Higher alpha amplifies score differences
 /// - At `alpha=0`, all items have equal quality weight
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DppConfig {
     /// Number of results to select.
     pub k: usize,
