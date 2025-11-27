@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.7.21] - 2025-11-27
+
+### Added
+- **REFERENCE.md**: Comprehensive technical reference document
+  - MaxSim algorithm with pseudocode and intuition
+  - Token pooling with visual explanations
+  - Matryoshka embeddings deep-dive
+  - SIMD implementation notes
+  - Mathematical properties and proofs
+  - Glossary of terms
+- `test_tail_dims_provide_discrimination`: Verifies Matryoshka tail adds discriminative power
+- `cut_dendrogram_produces_correct_clusters`: Tests union-find dendrogram cutting
+- `hierarchical_clusters_similar_tokens`: Verifies semantic clustering
+
+### Changed
+- Simplified module docs for accessibility: matryoshka.rs, colbert.rs, scoring.rs
+- Added inline paper citations with arxiv links
+- README now links to three-tier docs (README/DESIGN/REFERENCE)
+
 ## [0.7.20] - 2025-11-27
 
 ### Added

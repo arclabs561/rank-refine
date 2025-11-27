@@ -135,6 +135,7 @@ pub fn mmr<I: Clone>(
 }
 
 /// Fallible version of [`mmr`]. Returns `Err` if similarity matrix is wrong size.
+#[must_use]
 pub fn try_mmr<I: Clone>(
     candidates: &[(I, f32)],
     similarity: &[f32],
@@ -415,5 +416,169 @@ mod tests {
         let result = mmr(&candidates, &sim, MmrConfig::new(0.5, 1));
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].0, "a");
+    }
+
+    #[test]
+    fn try_mmr_invalid_matrix() {
+        let candidates = vec![("a", 0.9), ("b", 0.8)];
+        let sim = vec![1.0]; // Wrong size: should be 4
+        let result = try_mmr(&candidates, &sim, MmrConfig::default());
+        assert!(result.is_err());
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Property Tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    fn arb_candidates(max_len: usize) -> impl Strategy<Value = Vec<(u32, f32)>> {
+        proptest::collection::vec((0u32..100, 0.0f32..1.0), 0..max_len)
+    }
+
+    fn arb_similarity_matrix(n: usize) -> impl Strategy<Value = Vec<f32>> {
+        // Generate a valid n×n similarity matrix
+        proptest::collection::vec(0.0f32..1.0, n * n)
+    }
+
+    proptest! {
+        /// MMR output length bounded by min(k, n)
+        #[test]
+        fn mmr_output_length_bounded(
+            n in 1usize..10,
+            k in 1usize..20,
+            lambda in 0.0f32..1.0,
+        ) {
+            let candidates: Vec<(u32, f32)> = (0..n as u32)
+                .map(|i| (i, 1.0 - i as f32 * 0.1))
+                .collect();
+            let sim: Vec<f32> = (0..n * n).map(|_| 0.5).collect();
+
+            let result = mmr(&candidates, &sim, MmrConfig::new(lambda, k));
+            prop_assert!(result.len() <= k.min(n));
+        }
+
+        /// MMR returns unique IDs (no duplicates)
+        #[test]
+        fn mmr_unique_ids(n in 1usize..10) {
+            let candidates: Vec<(u32, f32)> = (0..n as u32)
+                .map(|i| (i, 1.0 - i as f32 * 0.1))
+                .collect();
+            let sim: Vec<f32> = (0..n * n).map(|_| 0.5).collect();
+
+            let result = mmr(&candidates, &sim, MmrConfig::default().with_k(n));
+            let mut seen = std::collections::HashSet::new();
+            for (id, _) in &result {
+                prop_assert!(seen.insert(*id), "Duplicate ID: {}", id);
+            }
+        }
+
+        /// λ=1.0 should return in relevance order
+        #[test]
+        fn mmr_lambda_1_is_relevance_order(n in 2usize..8) {
+            let candidates: Vec<(u32, f32)> = (0..n as u32)
+                .map(|i| (i, 1.0 - i as f32 * 0.1))
+                .collect();
+            // Identity similarity matrix (all items equally similar)
+            let sim: Vec<f32> = (0..n)
+                .flat_map(|i| (0..n).map(move |j| if i == j { 1.0 } else { 0.0 }))
+                .collect();
+
+            let result = mmr(&candidates, &sim, MmrConfig::new(1.0, n));
+
+            // Should be in relevance order (id 0 has highest score)
+            for window in result.windows(2) {
+                prop_assert!(window[0].1 >= window[1].1,
+                    "Not sorted: {:?} >= {:?}", window[0], window[1]);
+            }
+        }
+
+        /// MMR with empty input returns empty output
+        #[test]
+        fn mmr_empty_returns_empty(k in 0usize..10, lambda in 0.0f32..1.0) {
+            let candidates: Vec<(u32, f32)> = vec![];
+            let sim: Vec<f32> = vec![];
+
+            let result = mmr(&candidates, &sim, MmrConfig::new(lambda, k));
+            prop_assert!(result.is_empty());
+        }
+
+        /// MMR with k=0 returns empty output
+        #[test]
+        fn mmr_k_zero_returns_empty(n in 1usize..10) {
+            let candidates: Vec<(u32, f32)> = (0..n as u32)
+                .map(|i| (i, 0.5))
+                .collect();
+            let sim: Vec<f32> = vec![0.5; n * n];
+
+            let result = mmr(&candidates, &sim, MmrConfig::new(0.5, 0));
+            prop_assert!(result.is_empty());
+        }
+
+        /// try_mmr returns Err for wrong matrix size
+        #[test]
+        fn try_mmr_wrong_size_errors(n in 2usize..10, wrong_size in 0usize..5) {
+            let candidates: Vec<(u32, f32)> = (0..n as u32)
+                .map(|i| (i, 0.5))
+                .collect();
+            let correct_size = n * n;
+            let actual_size = if wrong_size == 0 { 0 } else { correct_size.saturating_sub(wrong_size) };
+
+            // Skip if accidentally correct size
+            prop_assume!(actual_size != correct_size);
+
+            let sim: Vec<f32> = vec![0.5; actual_size];
+            let result = try_mmr(&candidates, &sim, MmrConfig::default());
+            prop_assert!(result.is_err());
+        }
+
+        /// MMR with all equal relevance should still work
+        #[test]
+        fn mmr_equal_relevance(n in 1usize..8) {
+            let candidates: Vec<(u32, f32)> = (0..n as u32)
+                .map(|i| (i, 0.5)) // All same relevance
+                .collect();
+            let sim: Vec<f32> = vec![0.5; n * n];
+
+            let result = mmr(&candidates, &sim, MmrConfig::default().with_k(n));
+            prop_assert_eq!(result.len(), n);
+        }
+
+        /// mmr_cosine produces same IDs as mmr with equivalent matrix
+        #[test]
+        fn mmr_cosine_consistent_with_mmr(n in 2usize..6) {
+            let candidates: Vec<(u32, f32)> = (0..n as u32)
+                .map(|i| (i, 1.0 - i as f32 * 0.1))
+                .collect();
+
+            // Create orthogonal embeddings for simple testing
+            let embeddings: Vec<Vec<f32>> = (0..n)
+                .map(|i| {
+                    let mut v = vec![0.0; n];
+                    v[i] = 1.0;
+                    v
+                })
+                .collect();
+
+            // Build similarity matrix from embeddings
+            let mut sim = Vec::with_capacity(n * n);
+            for i in 0..n {
+                for j in 0..n {
+                    sim.push(simd::cosine(&embeddings[i], &embeddings[j]));
+                }
+            }
+
+            let mmr_result = mmr(&candidates, &sim, MmrConfig::new(0.5, n));
+            let cosine_result = mmr_cosine(&candidates, &embeddings, MmrConfig::new(0.5, n));
+
+            // Same IDs should be selected
+            let mmr_ids: std::collections::HashSet<_> = mmr_result.iter().map(|(id, _)| *id).collect();
+            let cosine_ids: std::collections::HashSet<_> = cosine_result.iter().map(|(id, _)| *id).collect();
+            prop_assert_eq!(mmr_ids, cosine_ids);
+        }
     }
 }
