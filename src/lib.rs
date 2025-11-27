@@ -66,11 +66,21 @@ pub mod prelude {
 #[derive(Debug, Clone, PartialEq)]
 pub enum RefineError {
     /// `head_dims` must be less than `query.len()` for tail refinement.
-    InvalidHeadDims { head_dims: usize, query_len: usize },
+    InvalidHeadDims {
+        /// The head dimension that was provided.
+        head_dims: usize,
+        /// The query length (must be > head_dims).
+        query_len: usize,
+    },
     /// Cannot score an empty query.
     EmptyQuery,
     /// Vector dimensions must match.
-    DimensionMismatch { expected: usize, got: usize },
+    DimensionMismatch {
+        /// Expected dimension.
+        expected: usize,
+        /// Actual dimension received.
+        got: usize,
+    },
 }
 
 impl std::fmt::Display for RefineError {
