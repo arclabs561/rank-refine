@@ -1049,7 +1049,7 @@ mod failure_mode_tests {
         let sim = vec![
             1.0, -0.9, 0.5, // a: anti-correlated with b
             -0.9, 1.0, 0.5, // b: anti-correlated with a
-            0.5, 0.5, 1.0,  // c: somewhat similar to both
+            0.5, 0.5, 1.0, // c: somewhat similar to both
         ];
 
         let result = mmr(&candidates, &sim, MmrConfig::new(0.5, 2));
@@ -1142,12 +1142,7 @@ mod failure_mode_tests {
     #[test]
     fn mmr_nan_in_similarity() {
         let candidates = vec![("a", 0.9), ("b", 0.85)];
-        let sim = vec![
-            1.0,
-            f32::NAN,
-            f32::NAN,
-            1.0,
-        ];
+        let sim = vec![1.0, f32::NAN, f32::NAN, 1.0];
 
         // Should not panic (NaN comparison returns false)
         let result = mmr(&candidates, &sim, MmrConfig::new(0.5, 2));
@@ -1159,10 +1154,7 @@ mod failure_mode_tests {
     #[test]
     fn dpp_nan_in_embeddings() {
         let candidates = vec![("a", 0.9), ("b", 0.85)];
-        let embeddings = vec![
-            vec![1.0, 0.0],
-            vec![f32::NAN, 0.0],
-        ];
+        let embeddings = vec![vec![1.0, 0.0], vec![f32::NAN, 0.0]];
 
         // Should not panic
         let result = dpp(&candidates, &embeddings, DppConfig::default().with_k(2));
@@ -1174,21 +1166,19 @@ mod failure_mode_tests {
     #[test]
     fn mmr_preserves_original_scores() {
         let candidates = vec![("a", 0.95), ("b", 0.85), ("c", 0.75)];
-        let sim = vec![
-            1.0, 0.1, 0.1,
-            0.1, 1.0, 0.1,
-            0.1, 0.1, 1.0,
-        ];
+        let sim = vec![1.0, 0.1, 0.1, 0.1, 1.0, 0.1, 0.1, 0.1, 1.0];
 
         let result = mmr(&candidates, &sim, MmrConfig::new(0.5, 3));
-        
+
         // Output should have original scores, not normalized MMR scores
         for (id, score) in &result {
             let original = candidates.iter().find(|(i, _)| i == id).unwrap().1;
             assert!(
                 (score - original).abs() < 1e-6,
                 "Score for {} was modified: {} vs {}",
-                id, score, original
+                id,
+                score,
+                original
             );
         }
     }

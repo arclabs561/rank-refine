@@ -668,7 +668,8 @@ mod tests {
     #[test]
     fn test_dot_truncating_mismatched() {
         // dot_truncating intentionally truncates to shorter length
-        assert!((dot_truncating(&[1.0, 2.0, 3.0], &[4.0, 5.0]) - 14.0).abs() < 1e-5); // 1*4 + 2*5 = 14
+        assert!((dot_truncating(&[1.0, 2.0, 3.0], &[4.0, 5.0]) - 14.0).abs() < 1e-5);
+        // 1*4 + 2*5 = 14
     }
 
     #[test]
