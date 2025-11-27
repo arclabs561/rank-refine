@@ -306,7 +306,7 @@ pub fn normalize_scores(scores: &[f32]) -> Vec<f32> {
 /// | Method | Quality | Speed | Best For |
 /// |--------|---------|-------|----------|
 /// | Ward clustering | High | O(n²) | Aggressive compression |
-/// | Greedy clustering | Good | O(n) | Moderate compression |
+/// | Greedy clustering | Good | O(n³) | Moderate compression |
 /// | Sequential | Low | O(n) | Speed-critical |
 pub trait Pooler {
     /// Pool to approximately `target_count` vectors.

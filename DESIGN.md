@@ -157,8 +157,8 @@ ColBERT stores $|D|$ embeddings per document. Pooling reduces to $|D|/k$:
 From Clavié et al. (2024). Quality loss measured on MS MARCO and BEIR.
 
 **Methods:**
-- `pool_tokens`: Greedy agglomerative, $O(n^3 d)$
-- `pool_tokens_hierarchical`: Ward's method via kodama, $O(n^2 \log n)$, better quality for factor 4+
+- `pool_tokens`: Greedy agglomerative, $O(n^3)$
+- `pool_tokens_hierarchical`: Ward's method via kodama, $O(n^2)$, better quality for factor 4+
 
 **Protected tokens:** Special tokens ([CLS], [D], [Q]) should not be pooled. Use `pool_tokens_with_protected`.
 
