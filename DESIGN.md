@@ -1,5 +1,29 @@
 # Design
 
+## Minimal Dependencies
+
+By default, this crate has **zero runtime dependencies**:
+
+```
+rank-refine v0.7.19
+└── (no dependencies)
+```
+
+With the `hierarchical` feature (Ward's method clustering):
+
+```
+rank-refine v0.7.19
+└── kodama v0.3.0  (pure Rust, no transitive deps)
+```
+
+Why this matters:
+- **Default compile**: Adds ~0.2s to your build
+- **Binary size**: Minimal footprint (~50KB)
+- **No inference runtime**: You bring embeddings; we score them
+- **Auditability**: At most 1 direct dependency
+
+The scoring algorithms (dot, cosine, MaxSim) are implemented directly with SIMD intrinsics — no linear algebra crate needed.
+
 ## Mathematical Foundation
 
 This crate addresses two mathematically distinct problems:

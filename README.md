@@ -7,6 +7,8 @@ Reranking algorithms for retrieval pipelines.
 [![Docs](https://docs.rs/rank-refine/badge.svg)](https://docs.rs/rank-refine)
 [![MSRV](https://img.shields.io/badge/MSRV-1.74-blue)](https://blog.rust-lang.org/2023/11/16/Rust-1.74.0.html)
 
+**Zero dependencies** by default. BYOM (bring your own model).
+
 ## The Retrieval Funnel Problem
 
 You want to run expensive, accurate models on your documents. But you have millions of them.
