@@ -21,6 +21,18 @@
 // Matches qdrant's MIN_DIM_SIZE_SIMD threshold.
 const MIN_DIM_SIMD: usize = 16;
 
+/// Threshold for treating a norm as "effectively zero" in cosine similarity.
+///
+/// Chosen to be larger than `f32::EPSILON` (~1.19e-7) to provide numerical
+/// headroom while remaining small enough to only catch degenerate cases.
+/// If both vector norms exceed this, we compute the ratio; otherwise return 0.
+///
+/// Common alternatives:
+/// - `f32::EPSILON`: meilisearch/arroy uses this, but it's arguably too strict
+/// - `1e-7`: similar magnitude to machine epsilon
+/// - `1e-9`: our choice, allows more "nearly-zero" vectors to be handled
+const NORM_EPSILON: f32 = 1e-9;
+
 /// Dot product of two vectors.
 ///
 /// Returns 0.0 for empty vectors.
@@ -72,14 +84,16 @@ pub fn norm(v: &[f32]) -> f32 {
 
 /// Cosine similarity between two vectors.
 ///
-/// Returns 0.0 if either vector has zero norm.
+/// Returns 0.0 if either vector has effectively-zero norm (< [`NORM_EPSILON`]).
+/// Result is in `[-1, 1]` for valid input, but floating-point error can push
+/// slightly outside this range; clamp if strict bounds are required.
 #[inline]
 #[must_use]
 pub fn cosine(a: &[f32], b: &[f32]) -> f32 {
     let d = dot(a, b);
     let na = norm(a);
     let nb = norm(b);
-    if na > 1e-9 && nb > 1e-9 {
+    if na > NORM_EPSILON && nb > NORM_EPSILON {
         d / (na * nb)
     } else {
         0.0
@@ -511,7 +525,7 @@ pub fn cosine_truncating(a: &[f32], b: &[f32]) -> f32 {
     let d = dot_truncating(a, b);
     let na = dot_truncating(a, a).sqrt();
     let nb = dot_truncating(b, b).sqrt();
-    if na > 1e-9 && nb > 1e-9 {
+    if na > NORM_EPSILON && nb > NORM_EPSILON {
         d / (na * nb)
     } else {
         0.0
