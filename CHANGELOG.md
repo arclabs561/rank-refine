@@ -1,10 +1,15 @@
 # Changelog
 
-## [0.7.22] - 2025-11-27
+## [0.7.23] - 2025-11-27
 
 ### Changed
-- **REFERENCE.md**: Mermaid diagrams, LaTeX math for GitHub rendering
-- **DESIGN.md**: Mermaid architecture diagram
+- Documentation refined based on research review:
+  - Pool factor quality loss numbers aligned with Clavié et al. (2024)
+  - Corrected complexity: greedy pooling is O(n^3 d), not O(n)
+  - Added ColBERTv2 and 2D Matryoshka references
+  - Documented protected tokens in DESIGN.md
+  - Added 2D Matryoshka as future direction in REFERENCE.md
+  - Mermaid diagrams and LaTeX math for GitHub rendering
 
 ## [0.7.21] - 2025-11-27
 

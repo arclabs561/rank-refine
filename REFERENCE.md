@@ -109,10 +109,12 @@ flowchart TB
 
 | Factor | Reduction | Quality Loss | When to Use |
 |--------|-----------|--------------|-------------|
-| 2 | 50% | ~0% | Default |
-| 3 | 66% | <1% | Good tradeoff |
-| 4 | 75% | 2-3% | Use `hierarchical` |
-| 8+ | 87%+ | 5%+ | Desperate |
+| 2 | 50% | ~0% | Default choice |
+| 3 | 66% | ~1% | Good tradeoff |
+| 4 | 75% | 2-5% | Use `hierarchical` feature |
+| 8+ | 87%+ | 5-10% | Storage-critical only |
+
+Quality loss measured on MS MARCO and BEIR benchmarks.
 
 ### Greedy vs Ward's
 
@@ -157,6 +159,18 @@ $$\text{final} = \alpha \cdot \text{original} + (1-\alpha) \cdot \text{tail\_sim
 - $\alpha = 0$: Tail similarity only
 
 Reference: [Kusupati et al., 2022](https://arxiv.org/abs/2205.13147)
+
+### Future: 2D Matryoshka
+
+2D Matryoshka (Li et al., 2024) extends MRL by training with loss at multiple
+**layers** AND dimensions:
+
+$$\mathcal{L}_{2D} = \sum_{l \in \text{layers}} \sum_{k \in \text{dims}} \lambda_{l,k} \cdot \text{loss}(v^{(l)}_{0:k})$$
+
+This enables truncating intermediate transformer layers at inference time,
+reducing latency ~50% with ~85% quality retention. Not yet implemented here.
+
+Reference: [Li et al., 2024](https://arxiv.org/abs/2402.14776)
 
 ---
 

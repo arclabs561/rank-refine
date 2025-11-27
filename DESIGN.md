@@ -126,14 +126,17 @@ ColBERT stores $|D|$ embeddings per document. Pooling reduces to $|D|/k$:
 | Factor | Storage | Quality Loss |
 |--------|---------|--------------|
 | 2x | 50% | ~0% |
-| 4x | 25% | <5% |
-| 8x | 12.5% | <10% |
+| 3x | 33% | ~1% |
+| 4x | 25% | 2-5% |
+| 8x | 12.5% | 5-10% |
 
-From Clavié et al. (2024).
+From Clavié et al. (2024). Quality loss measured on MS MARCO and BEIR.
 
 **Methods:**
-- `pool_tokens`: Greedy agglomerative, O(n)
-- `pool_tokens_hierarchical`: Ward's method, O(n²), better quality
+- `pool_tokens`: Greedy agglomerative, $O(n^3 d)$
+- `pool_tokens_hierarchical`: Ward's method via kodama, $O(n^2 \log n)$, better quality for factor 4+
+
+**Protected tokens:** Special tokens ([CLS], [D], [Q]) should not be pooled. Use `pool_tokens_with_protected`.
 
 **Key insight:** Pooling is index-time only. Queries stay full resolution.
 
@@ -163,8 +166,10 @@ Mathematical distinction is documented, but practical separation isn't justified
 
 ### Scoring
 - Khattab & Zaharia (2020). [ColBERT](https://arxiv.org/abs/2004.12832)
+- Santhanam et al. (2022). [ColBERTv2](https://arxiv.org/abs/2112.01488) — residual compression
 - Nogueira & Cho (2019). [BERT for Passage Reranking](https://arxiv.org/abs/1901.04085)
 - Kusupati et al. (2022). [Matryoshka Embeddings](https://arxiv.org/abs/2205.13147)
+- Li et al. (2024). [2D Matryoshka Embeddings](https://arxiv.org/abs/2402.14776) — layer+dim truncation
 
 ### Diversity
 - Carbonell & Goldstein (1998). [MMR](https://dl.acm.org/doi/10.1145/290941.291025)
