@@ -146,22 +146,13 @@ let pooled = pool_tokens(&doc_tokens, 4);  // → 8 tokens (75% smaller)
 ## Examples
 
 ```bash
-cargo run --example rerank           # Dense scoring basics
-cargo run --example rag_rerank       # RAG chunk reranking
-cargo run --example search_diversity # MMR diversity selection
+cargo run --example rerank           # Dense scoring
+cargo run --example rag_rerank       # RAG reranking
+cargo run --example search_diversity # MMR diversity
 cargo run --example colbert_pooling  # Token compression
 ```
 
-## Documentation
-
-| Document | Audience | Contents |
-|----------|----------|----------|
-| [README](README.md) | Getting started | Quick examples, when to use |
-| [DESIGN.md](DESIGN.md) | Architecture | Module design, API rationale |
-| [REFERENCE.md](REFERENCE.md) | Deep dive | Algorithms, math, pseudocode |
-
-**New to this?** Start with the examples above, then read REFERENCE.md
-to understand how MaxSim and token pooling work under the hood.
+See [DESIGN.md](DESIGN.md) for architecture, [REFERENCE.md](REFERENCE.md) for algorithms.
 
 ## License
 
