@@ -115,7 +115,7 @@ Quality loss measured on MS MARCO (Clavie et al., 2024).
 
 ## Benchmarks
 
-Apple M3, `cargo bench`:
+M3 Max, `cargo bench`:
 
 | Operation | Dim | Time |
 |-----------|-----|------|
