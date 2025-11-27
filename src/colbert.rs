@@ -890,6 +890,28 @@ mod tests {
     }
 
     #[test]
+    fn test_pool_tokens_factor_larger_than_count() {
+        // Pool factor 10 on 3 tokens should return 1 pooled token
+        let tokens = vec![
+            vec![1.0, 0.0, 0.0],
+            vec![0.0, 1.0, 0.0],
+            vec![0.0, 0.0, 1.0],
+        ];
+        let pooled = pool_tokens(&tokens, 10);
+        // target_count = 3 / 10 = 0 -> max(0, 1) = 1
+        assert!(!pooled.is_empty(), "Should return at least one token");
+        assert!(pooled.len() <= 3, "Should not exceed original count");
+    }
+
+    #[test]
+    fn test_pool_tokens_sequential_factor_larger_than_count() {
+        let tokens = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+        let pooled = pool_tokens_sequential(&tokens, 10);
+        // With window_size=10 and 2 tokens, one chunk of size 2
+        assert_eq!(pooled.len(), 1);
+    }
+
+    #[test]
     fn test_pooling_methods_produce_same_dimensions() {
         let tokens: Vec<Vec<f32>> = (0..8)
             .map(|i| {
