@@ -230,6 +230,28 @@ fn bench_mmr(c: &mut Criterion) {
     g.finish();
 }
 
+fn bench_dpp(c: &mut Criterion) {
+    let mut g = c.benchmark_group("dpp");
+
+    // DPP uses embeddings directly (not a similarity matrix)
+    let dim = 128;
+
+    for &n in &[50, 100, 200] {
+        let candidates: Vec<(usize, f32)> =
+            (0..n).map(|i| (i, 1.0 - i as f32 / n as f32)).collect();
+
+        let embeddings: Vec<Vec<f32>> = (0..n).map(|i| random_vec(dim, i as u64)).collect();
+
+        let config = diversity::DppConfig::default().with_k(10);
+
+        g.bench_with_input(BenchmarkId::new("k10_d128", n), &n, |bench, _| {
+            bench.iter(|| black_box(diversity::dpp(&candidates, &embeddings, config)));
+        });
+    }
+
+    g.finish();
+}
+
 criterion_group!(
     benches,
     bench_simd,
@@ -238,6 +260,7 @@ criterion_group!(
     bench_colbert,
     bench_pool_tokens,
     bench_maxsim_pooled,
-    bench_mmr
+    bench_mmr,
+    bench_dpp
 );
 criterion_main!(benches);
