@@ -61,7 +61,7 @@
 //! - `alpha = 0.5`: Equal blend (default)
 //! - `alpha = 0.0`: Use tail similarity only
 //!
-//! See [`REFERENCE.md`](https://github.com/your-repo/REFERENCE.md) for mathematical details.
+//! See [REFERENCE.md](https://github.com/arclabs561/rank-refine/blob/master/REFERENCE.md) for mathematical details.
 
 use crate::{simd, RefineConfig, RefineError, Result};
 use std::collections::HashMap;

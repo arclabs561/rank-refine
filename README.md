@@ -1,257 +1,143 @@
 # rank-refine
 
-**Reranking algorithms for retrieval pipelines.** SIMD-accelerated, zero dependencies.
+Reranking with embeddings. SIMD-accelerated.
 
 [![CI](https://github.com/arclabs561/rank-refine/actions/workflows/ci.yml/badge.svg)](https://github.com/arclabs561/rank-refine/actions)
 [![Crates.io](https://img.shields.io/crates/v/rank-refine.svg)](https://crates.io/crates/rank-refine)
 [![Docs](https://docs.rs/rank-refine/badge.svg)](https://docs.rs/rank-refine)
 
-## Why This Library?
-
-Modern search pipelines are two-stage:
-
 ```
-10M docs → fast retrieval (ANN, BM25) → 100 candidates → reranking → 10 results
+cargo add rank-refine
 ```
 
-**This crate is the reranking step.** It takes embeddings and scores them.
-
-| What | This Crate | Other Tools |
-|------|------------|-------------|
-| **Input** | Embeddings (f32 vectors) | Text, raw documents |
-| **Output** | Relevance scores | Model inference |
-| **Dependencies** | 0 (or 1 with `hierarchical`) | 50+ (transformers, torch) |
-| **Compile time** | ~0.2s | Minutes |
-
-**Bring Your Own Model (BYOM)**: We score embeddings — we don't generate them.
-Use [fastembed](https://github.com/Anush008/fastembed-rs), [candle](https://github.com/huggingface/candle), 
-[ort](https://github.com/pykeio/ort), or any embedding source.
-
-### vs rank-fusion
-
-| | rank-refine | [rank-fusion](https://crates.io/crates/rank-fusion) |
-|-|-------------|-------------|
-| **Input** | Embeddings | Ranked lists with scores |
-| **Use case** | Rerank with semantic similarity | Combine multiple retrievers |
-| **Example** | Score query vs documents with cosine | Merge BM25 + dense results |
-
-Use **rank-fusion** when you have multiple retriever outputs to combine.
-Use **rank-refine** when you have embeddings and want better ranking.
-
-## Quick Start
+## Usage
 
 ```rust
-use rank_refine::simd::cosine;
+use rank_refine::simd::{cosine, maxsim_vecs};
 
-// Score query against each candidate
-let query = vec![0.1, 0.2, 0.3, 0.4];
-let docs = vec![
-    vec![0.1, 0.2, 0.3, 0.4],  // similar
-    vec![0.9, 0.0, 0.0, 0.1],  // different
-];
+// Dense
+let score = cosine(&query, &doc);
 
-let scores: Vec<f32> = docs.iter()
-    .map(|d| cosine(&query, d))
-    .collect();
-// [1.0, 0.28] — first doc most similar
+// Late interaction (ColBERT)
+let score = maxsim_vecs(&query_tokens, &doc_tokens);
 ```
 
-## Methods
+## API
 
-### Dense Scoring
+### Similarity
 
-Single-vector embeddings. SIMD auto-dispatches (AVX2+FMA on x86_64, NEON on ARM).
-
-```rust
-use rank_refine::simd::{cosine, dot, norm};
-
-let score = cosine(&a, &b);   // -1 to 1, normalized
-let score = dot(&a, &b);      // unbounded, for pre-normalized vectors
-let len = norm(&v);           // L2 norm
-```
-
-**When to use**: Fast baseline. Most embedding models output single vectors.
-
-### Late Interaction (MaxSim)
-
-Per-token embeddings for finer-grained matching. Used by ColBERT, ColPali, Jina-ColBERT-v2.
-
-```rust
-use rank_refine::simd::{maxsim, maxsim_cosine, maxsim_batch};
-
-// Query: 3 tokens × 128 dims, Doc: 10 tokens × 128 dims
-let query: Vec<Vec<f32>> = vec![vec![0.1; 128]; 3];
-let doc: Vec<Vec<f32>> = vec![vec![0.2; 128]; 10];
-
-let score = maxsim_vecs(&query, &doc);
-
-// Batch scoring: one query, many docs
-let docs: Vec<Vec<Vec<f32>>> = vec![doc; 100];
-let scores = maxsim_batch(&query, &docs);
-```
-
-**Formula**: For each query token, find best-matching doc token, then sum.
-
-$$\text{MaxSim}(Q, D) = \sum_{q \in Q} \max_{d \in D} (q \cdot d)$$
-
-**Note**: `maxsim(Q, D) ≠ maxsim(D, Q)` — query must be first argument.
-
-### Token Importance Weighting
-
-Weight query tokens by importance (e.g., IDF). Research shows +2-5% quality.
-
-```rust
-use rank_refine::simd::maxsim_weighted;
-
-let weights = vec![1.0, 0.5, 2.0];  // per-token weights
-let score = maxsim_weighted(&query, &doc, &weights);
-```
-
-### Score Normalization
-
-MaxSim scores are unbounded. Normalize for comparison:
-
-```rust
-use rank_refine::simd::{normalize_maxsim, softmax_scores, top_k_indices};
-
-// Divide by query length (ColBERT convention: 32)
-let normalized = normalize_maxsim(score, 32);
-
-// Softmax for relative comparison
-let probs = softmax_scores(&scores);
-
-// Get top-k indices
-let top_10 = top_k_indices(&scores, 10);
-```
+| Function | Input | Notes |
+|----------|-------|-------|
+| `cosine(a, b)` | `&[f32]` | Normalized, -1 to 1 |
+| `dot(a, b)` | `&[f32]` | Unnormalized |
+| `maxsim(q, d)` | `&[&[f32]]` | Sum of max similarities |
+| `maxsim_cosine(q, d)` | `&[&[f32]]` | Cosine variant |
+| `maxsim_weighted(q, d, w)` | `&[&[f32]], &[f32]` | Per-token weights |
+| `maxsim_batch(q, docs)` | `&[Vec<f32>], &[Vec<Vec<f32>>]` | Batch scoring |
 
 ### Token Pooling
 
-Reduce ColBERT storage by clustering similar tokens:
+| Function | Compression | Quality |
+|----------|-------------|---------|
+| `pool_tokens(t, 2)` | 50% | ~0% loss |
+| `pool_tokens(t, 4)` | 75% | 2-5% loss |
+| `pool_tokens_adaptive(t, f)` | varies | auto-selects method |
+| `pool_tokens_with_protected(t, f, n)` | varies | preserves first n tokens |
+
+### Diversity
+
+| Function | Algorithm |
+|----------|-----------|
+| `mmr_cosine(candidates, embeddings, config)` | Maximal Marginal Relevance |
+| `dpp(candidates, embeddings, config)` | Determinantal Point Process |
+
+### Utilities
+
+| Function | Purpose |
+|----------|---------|
+| `normalize_maxsim(score, qlen)` | Scale to [0,1] |
+| `softmax_scores(scores)` | Probability distribution |
+| `top_k_indices(scores, k)` | Top-k by score |
+| `blend(a, b, α)` | Linear interpolation |
+
+### Traits
 
 ```rust
-use rank_refine::colbert::{pool_tokens, pool_tokens_adaptive, pool_tokens_with_protected};
-
-// 32 tokens → 8 tokens (factor 4 = 75% compression)
-let pooled = pool_tokens(&doc_tokens, 4);
-
-// Adaptive: switches method based on token count
-let pooled = pool_tokens_adaptive(&doc_tokens, 4);
-
-// Preserve special tokens ([CLS], [D])
-let pooled = pool_tokens_with_protected(&doc_tokens, 4, 2);
-```
-
-| Factor | Compression | Quality Loss |
-|--------|-------------|--------------|
-| 2 | 50% | ~0% |
-| 3 | 66% | ~1% |
-| 4+ | 75%+ | 2-5% (use `hierarchical` feature) |
-
-### TokenIndex
-
-Pre-indexed documents for repeated queries:
-
-```rust
-use rank_refine::colbert::TokenIndex;
-
-let index = TokenIndex::new(vec![
-    ("doc1", vec![vec![1.0, 0.0], vec![0.0, 1.0]]),
-    ("doc2", vec![vec![0.5, 0.5]]),
-]);
-
-let results = index.top_k(&query_tokens, 10);
-```
-
-### Diversity Selection (MMR & DPP)
-
-Avoid returning near-duplicates:
-
-```rust
-use rank_refine::diversity::{mmr_cosine, dpp, MmrConfig, DppConfig};
-
-// Maximal Marginal Relevance
-let config = MmrConfig::default().with_k(5).with_lambda(0.5);
-let diverse = mmr_cosine(&candidates, &embeddings, config);
-
-// Determinantal Point Process (better theoretical guarantees)
-let config = DppConfig::new(5, 0.5);
-let diverse = dpp(&candidates, &embeddings, config);
-```
-
-- λ=1.0: pure relevance (top-k)
-- λ=0.5: balanced (default)
-- λ=0.0: maximum diversity
-
-### Matryoshka Embeddings
-
-Two-stage refinement with truncated embeddings:
-
-```rust
-use rank_refine::matryoshka::refine;
-
-// Stage 1: coarse ranking with first 128 dims
-// Stage 2: fine-tune with remaining dims
-let results = refine(&candidates, &query, 128, &docs);
-```
-
-### Cross-Encoder
-
-Trait for transformer-based scoring:
-
-```rust
-use rank_refine::crossencoder::{CrossEncoderModel, rerank};
-
-struct MyModel { /* ort, candle, etc. */ }
-
-impl CrossEncoderModel for MyModel {
-    fn score(&self, query: &str, doc: &str) -> f32 {
-        // Your inference code
-    }
+// Cross-encoder: implement this
+trait CrossEncoderModel {
+    fn score(&self, query: &str, doc: &str) -> f32;
 }
 
-let ranked = rerank(&model, "query", &[("id1", "doc text")]);
+// Token pooling: implement this or use builtins
+trait Pooler {
+    fn pool(&self, tokens: &[Vec<f32>], target: usize) -> Vec<Vec<f32>>;
+}
 ```
 
-### Type-Safe Wrappers
-
-Encode mathematical invariants at compile time:
+### Types
 
 ```rust
-use rank_refine::embedding::{Normalized, MaskedTokens, normalize};
+// Compile-time normalized guarantee
+let n: Normalized = normalize(&v)?;
+n.dot(&n) == 1.0
 
-// Normalized: guarantees unit length
-let n = normalize(&vec![3.0, 4.0]).unwrap();
-assert!((n.dot(&n) - 1.0).abs() < 1e-6);
-
-// MaskedTokens: exclude padding from MaxSim
-let masked = MaskedTokens::with_mask(&tokens, &attention_mask);
+// Masked tokens (attention mask applied)
+let m = MaskedTokens::with_mask(&tokens, &mask);
 ```
+
+## How It Works
+
+### MaxSim (Late Interaction)
+
+For each query token, find its best-matching document token, then sum:
+
+$$\text{score}(Q, D) = \sum_{i} \max_{j} (q_i \cdot d_j)$$
+
+This preserves token-level semantics that single-vector embeddings lose.
+
+### MMR (Diversity)
+
+Balance relevance with diversity by penalizing similarity to already-selected items:
+
+$$\text{MMR} = \arg\max_d \left[ \lambda \cdot \text{rel}(d) - (1-\lambda) \cdot \max_{s \in S} \text{sim}(d,s) \right]$$
+
+### Token Pooling
+
+Cluster similar document tokens to reduce storage:
+
+| Factor | Storage Saved | Quality Loss |
+|--------|---------------|--------------|
+| 2 | 50% | ~0.1% |
+| 3 | 66% | ~0.8% |
+| 4 | 75% | ~2.1% |
+
+Quality loss measured on MS MARCO (Clavie et al., 2024).
+
+## Benchmarks
+
+Apple M3, `cargo bench`:
+
+| Operation | Dim | Time |
+|-----------|-----|------|
+| `dot` | 128 | 13ns |
+| `dot` | 768 | 126ns |
+| `cosine` | 128 | 40ns |
+| `cosine` | 768 | 380ns |
+| `maxsim` | 32q×128d×128dim | 49μs |
+| `maxsim` (pooled 2x) | 32q×64d×128dim | 25μs |
+| `maxsim` (pooled 4x) | 32q×32d×128dim | 12μs |
 
 ## Features
 
-| Feature | Adds | Purpose |
-|---------|------|---------|
-| `hierarchical` | kodama | Ward's clustering for 4x+ pooling |
+| Feature | Dependency | Purpose |
+|---------|------------|---------|
+| `hierarchical` | kodama | Ward's clustering (better at 4x+) |
 
-## Examples
+## See Also
 
-```bash
-cargo run --example rerank           # Dense scoring
-cargo run --example rag_rerank       # RAG pipeline
-cargo run --example search_diversity # MMR diversity
-cargo run --example colbert_pooling  # Token compression
-```
-
-## Documentation
-
-- **[DESIGN.md](DESIGN.md)**: Architecture, API rationale, research citations
-- **[REFERENCE.md](REFERENCE.md)**: Algorithms, pseudocode, mathematical properties
-
-## Performance
-
-- **SIMD**: Auto-dispatches AVX2+FMA (x86_64) or NEON (aarch64)
-- **Zero-copy**: Slice-based APIs avoid allocation
-- **Minimal threshold**: SIMD skipped for dim < 16 (overhead exceeds benefit)
+- [rank-fusion](https://crates.io/crates/rank-fusion): merge ranked lists (no embeddings)
+- [DESIGN.md](DESIGN.md): architecture
+- [REFERENCE.md](REFERENCE.md): algorithms
 
 ## License
 

@@ -44,7 +44,7 @@
 //! can find documents where "capital" and "France" both have strong matches,
 //! even if they appear in different parts of the document.
 //!
-//! See [`REFERENCE.md`](https://github.com/your-repo/REFERENCE.md) for the full algorithm.
+//! See [REFERENCE.md](https://github.com/arclabs561/rank-refine/blob/master/REFERENCE.md) for the full algorithm.
 //!
 //! # Token Pooling
 //!
