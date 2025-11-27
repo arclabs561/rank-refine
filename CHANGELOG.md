@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.35] - 2025-11-27
+
+### Added
+- `PartialEq` derive for `MmrConfig` and `DppConfig` (enables test comparisons)
+
+### Fixed
+- Broken REFERENCE.md link in scoring.rs (was "your-repo")
+- DPP complexity in DESIGN.md (O(k×n×d), not O(n²k))
+- Clippy `doc_markdown` warnings (backticks for `MaxSim`, `ColBERT`, etc.)
+- DPP `exp()` overflow documented in `DppConfig::with_alpha`
+- Example formatting (`cargo fmt`)
+
 ## [0.7.34] - 2025-11-27
 
 ### Added
