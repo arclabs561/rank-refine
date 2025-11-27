@@ -160,6 +160,11 @@ pub fn mmr<I: Clone>(
 }
 
 /// Fallible version of [`mmr`]. Returns `Err` if similarity matrix is wrong size.
+///
+/// # Errors
+///
+/// Returns [`RefineError::DimensionMismatch`](crate::RefineError::DimensionMismatch)
+/// if `similarity.len() != candidates.len()²`.
 pub fn try_mmr<I: Clone>(
     candidates: &[(I, f32)],
     similarity: &[f32],
@@ -253,6 +258,10 @@ pub fn try_mmr<I: Clone>(
 /// * `candidates` - `(id, relevance_score)` pairs
 /// * `embeddings` - Embeddings for each candidate (same order)
 /// * `config` - MMR configuration
+///
+/// # Panics
+///
+/// Panics if `embeddings.len() != candidates.len()`.
 ///
 /// # Example
 ///
@@ -431,6 +440,10 @@ impl DppConfig {
 /// # Returns
 ///
 /// Selected documents in DPP order.
+///
+/// # Panics
+///
+/// Panics if `embeddings.len() != candidates.len()`.
 ///
 /// # Complexity
 ///

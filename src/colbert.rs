@@ -660,7 +660,7 @@ impl<I: Clone> TokenIndex<I> {
 impl<I: Clone + Eq + std::hash::Hash> TokenIndex<I> {
     /// Get token embeddings by ID.
     ///
-    /// O(n) scan. For frequent lookups, consider maintaining a separate HashMap.
+    /// O(n) scan. For frequent lookups, consider maintaining a separate `HashMap`.
     #[must_use]
     pub fn get(&self, id: &I) -> Option<&Vec<Vec<f32>>> {
         self.entries
