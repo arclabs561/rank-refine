@@ -11,8 +11,7 @@ use rank_refine::simd::cosine;
 fn main() {
     // Search results with embeddings (after dense retrieval)
     // Note: embeddings should be normalized for cosine similarity
-    let results = vec![
-        (
+    let results = [(
             "python_async_intro",
             embed("python async await tutorial introduction"),
         ),
@@ -34,8 +33,7 @@ fn main() {
         (
             "java_concurrency",
             embed("java concurrency executors threads"),
-        ),
-    ];
+        )];
 
     // Relevance scores from retrieval (higher = more relevant)
     let scores: Vec<f32> = vec![0.95, 0.93, 0.91, 0.85, 0.82, 0.78, 0.75, 0.70];
@@ -62,7 +60,7 @@ fn main() {
     println!("\nSimilarity matrix (top 4):");
     for i in 0..4 {
         for j in 0..4 {
-            let sim = cosine(&embeddings[i], &embeddings[j]);
+            let sim = cosine(embeddings[i], embeddings[j]);
             print!("  {:.2}", sim);
         }
         println!("  <- {}", candidates[i].0);
@@ -96,7 +94,7 @@ fn main() {
     let mut sim_matrix = vec![vec![0.0f32; n]; n];
     for i in 0..n {
         for j in 0..n {
-            sim_matrix[i][j] = cosine(&embeddings[i], &embeddings[j]);
+            sim_matrix[i][j] = cosine(embeddings[i], embeddings[j]);
         }
     }
 
