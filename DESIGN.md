@@ -1,294 +1,161 @@
 # Design
 
-## Minimal Dependencies
+## Dependencies
 
-By default, this crate has **zero runtime dependencies**:
+**Zero by default.** One optional.
 
-```
-rank-refine v0.7.19
-└── (no dependencies)
-```
+| Config | Deps | Compile | Binary |
+|--------|------|---------|--------|
+| Default | 0 | ~0.2s | ~50KB |
+| `hierarchical` | kodama | ~0.5s | ~80KB |
 
-With the `hierarchical` feature (Ward's method clustering):
+Why minimal: SIMD is hand-written. No linear algebra crate needed.
 
-```
-rank-refine v0.7.19
-└── kodama v0.3.0  (pure Rust, no transitive deps)
-```
+## Problem Space
 
-Why this matters:
-- **Default compile**: Adds ~0.2s to your build
-- **Binary size**: Minimal footprint (~50KB)
-- **No inference runtime**: You bring embeddings; we score them
-- **Auditability**: At most 1 direct dependency
+Two distinct problems, both requiring document content (embeddings):
 
-The scoring algorithms (dot, cosine, MaxSim) are implemented directly with SIMD intrinsics — no linear algebra crate needed.
+| Problem | Function | Module |
+|---------|----------|--------|
+| **Scoring** | $f(\text{query}, \text{doc}) \to \mathbb{R}$ | simd, colbert, matryoshka, crossencoder |
+| **Selection** | $f(\text{set}) \to \mathbb{R}$ | diversity |
 
-## Mathematical Foundation
+## Scoring Paradigms
 
-This crate addresses two mathematically distinct problems:
+### Dense Scoring
 
-| Problem | Field | Function Type | This Module |
-|---------|-------|---------------|-------------|
-| **Scoring** | Learning to Rank | f(query, doc) → ℝ | `simd`, `colbert`, `matryoshka`, `crossencoder` |
-| **Selection** | Submodular Optimization | f(set) → ℝ | `diversity` |
+Single embedding per document:
 
-Both require looking at document **content** (embeddings), unlike rank fusion which only looks at scores/ranks.
-
-## Scoring (Learning to Rank)
-
-**Problem**: Given a query and candidate documents, compute relevance scores.
-
-Three paradigms in increasing complexity and quality:
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        SCORING PARADIGMS                            │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│   Dense             Late Interaction       Cross-encoder            │
-│   ──────────────    ─────────────────      ──────────────           │
-│   q · d             Σ_i max_j(q_i · d_j)   Model(q || d)            │
-│                                                                     │
-│   O(d)              O(q × d × tokens)      O(n) inference           │
-│                                                                     │
-│   Single vector     Token embeddings       Full text pair           │
-│   per doc           per doc                (expensive)              │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
+```math
+\text{score}(q, d) = \frac{q \cdot d}{\|q\| \|d\|}
 ```
 
-### Dense Scoring (simd module)
+**Complexity:** $O(d)$ where $d$ is embedding dimension.
 
-The simplest: one embedding per document.
+### Late Interaction (MaxSim)
 
-```rust
-let score = dot(&query_embedding, &doc_embedding);
-let score = cosine(&query_embedding, &doc_embedding);
+Per-token embeddings. For each query token, find best matching doc token:
+
+```math
+\text{MaxSim}(Q, D) = \sum_{i=1}^{|Q|} \max_{j=1}^{|D|} (q_i \cdot d_j)
 ```
 
-**When to use**: Bi-encoder embeddings (Sentence-BERT, E5, etc.). Fast, SIMD-accelerated.
+**Complexity:** $O(|Q| \cdot |D| \cdot d)$
 
-### Late Interaction (colbert module)
+**Why better:** Captures token-level semantics that single vectors lose. "Capital of France" matches documents where "capital" and "France" co-occur with high similarity, not just documents about capitals in general.
 
-Token-level embeddings preserve fine-grained semantics. MaxSim scoring:
+### Cross-encoder
 
-```
-score = Σ_{q ∈ Q} max_{d ∈ D} sim(q, d)
-```
+Full transformer attention over concatenated query+document:
 
-For each query token, find the most similar document token and sum.
-
-```rust
-let score = maxsim(&query_tokens, &doc_tokens);
-let ranked = rank(&query_tokens, &documents);
+```math
+\text{score}(q, d) = \text{Model}([q; d])
 ```
 
-**When to use**: ColBERT-style models. 5-15% better recall on complex queries.
+**Complexity:** $O(n)$ inference per pair.
 
-### Matryoshka Refinement (matryoshka module)
+**Why better:** Full cross-attention, not just embedding comparison. ~5x better than dense on MS MARCO (Nogueira & Cho, 2019).
 
-For [Matryoshka Representation Learning](https://arxiv.org/abs/2205.13147) embeddings.
+## Diversity Selection
 
-Coarse search with prefix dimensions → refine with tail dimensions:
+### The Problem
 
-```rust
-// First 256 dims for coarse ranking
-let coarse_scores = candidates.iter().map(|d| dot(&q[..256], &d[..256]));
+Top-k by relevance often returns near-duplicates. Users want variety.
 
-// Full 768 dims to refine top candidates
-let refined = mrl_refine(query, candidates, config);
+### Submodular Structure
+
+Diversity selection is **submodular**: adding an item has diminishing returns.
+
+```math
+f(S \cup \{x\}) - f(S) \leq f(T \cup \{x\}) - f(T) \quad \text{for } T \subseteq S
 ```
 
-**When to use**: MRL-trained models (Nomic, Cohere v3, OpenAI text-embedding-3).
+If you've already selected similar items, a new item adds less marginal value.
 
-### Cross-encoder (crossencoder module)
+### MMR (Maximal Marginal Relevance)
 
-The most accurate but most expensive. Requires running a transformer on each (query, document) pair.
+Balances relevance and diversity:
 
-```rust
-impl CrossEncoderModel for MyModel {
-    fn score(&self, query: &str, document: &str) -> f32 {
-        // Your inference code here
-    }
-}
+```math
+\text{MMR} = \arg\max_{d \in R \setminus S} \left[ \lambda \cdot \text{rel}(d) - (1-\lambda) \cdot \max_{s \in S} \text{sim}(d, s) \right]
 ```
 
-**When to use**: Final reranking stage. ~5x better than dense on MS MARCO.
+- $\lambda = 1$: pure relevance (top-k)
+- $\lambda = 0.5$: balanced
+- $\lambda = 0$: maximum diversity
 
-## Selection (Submodular Optimization)
+**Complexity:** $O(k \cdot n)$ where $k$ is output size, $n$ is candidate size.
 
-**Problem**: Given scored candidates, select a diverse subset.
-
-This is fundamentally different from scoring:
-- Scoring: f(query, doc) → ℝ  (independent per doc)
-- Selection: f(S ⊆ candidates) → ℝ  (depends on what's already selected)
-
-### The Submodular Structure
-
-Adding an item has **diminishing returns**:
-
-```
-f(S ∪ {x}) - f(S) ≤ f(T ∪ {x}) - f(T)  when T ⊆ S
-```
-
-If you've already selected similar items, a new item adds less value.
-
-### MMR (diversity module)
-
-[Maximal Marginal Relevance](https://dl.acm.org/doi/10.1145/290941.291025) balances relevance and diversity:
-
-```
-MMR = argmax_{d ∈ R\S} [ λ · rel(d) - (1-λ) · max_{s ∈ S} sim(d, s) ]
-```
-
-- λ=1.0: Pure relevance (no diversity)
-- λ=0.5: Balanced
-- λ=0.0: Pure diversity (avoid similar items)
-
-```rust
-let diverse = mmr_cosine(&relevance_scores, &embeddings, MmrConfig::default());
-```
-
-**When to use**: Search results, recommendations, summarization.
-
-## Why One Crate, Not Two?
-
-We considered separating scoring and selection into `rank-refine` and `rank-select`.
-
-Arguments for keeping them together:
-
-1. **Shared SIMD**: Both use `dot`, `cosine`, `maxsim` from simd module
-2. **Pipeline coupling**: Users typically score → filter → diversify in sequence
-3. **Code size**: MMR is ~150 lines, not enough for a separate crate
-
-The mathematical distinction is documented, but practical concerns favor a single crate.
-
-## Architecture
-
-```
-                      ┌──────────────────┐
-                      │   Your Model     │
-                      │  (embeddings)    │
-                      └────────┬─────────┘
-                               │
-            ┌──────────────────┼──────────────────┐
-            │                  │                  │
-            ▼                  ▼                  ▼
-    ┌───────────────┐  ┌───────────────┐  ┌───────────────┐
-    │  matryoshka   │  │   colbert     │  │ crossencoder  │
-    │  (MRL tail)   │  │  (MaxSim)     │  │    (BYOM)     │
-    └───────┬───────┘  └───────┬───────┘  └───────┬───────┘
-            │                  │                  │
-            └──────────────────┼──────────────────┘
-                               │
-                               ▼
-                      ┌──────────────────┐
-                      │      simd        │
-                      │  (dot, cosine,   │
-                      │   maxsim, norm)  │
-                      └────────┬─────────┘
-                               │
-                               ▼
-                      ┌──────────────────┐
-                      │    diversity     │
-                      │  (MMR, selection)│
-                      └──────────────────┘
-```
+**Greedy approximation:** MMR is greedy, not optimal. But greedy submodular maximization has a $(1 - 1/e) \approx 0.63$ approximation guarantee (Nemhauser et al., 1978).
 
 ## SIMD Implementation
 
-Automatic dispatch based on CPU features:
+Hand-written intrinsics, auto-dispatch at runtime:
 
-| Platform | Features | Method |
-|----------|----------|--------|
-| x86_64 | AVX2 + FMA | 256-bit vectors, fused multiply-add |
-| x86_64 | SSE4.1 | 128-bit vectors |
-| aarch64 | NEON | 128-bit vectors |
-| other | — | Portable scalar fallback |
+| Platform | Features | Vectors |
+|----------|----------|---------|
+| x86_64 | AVX2 + FMA | 256-bit (8 floats) |
+| x86_64 | SSE4.1 | 128-bit (4 floats) |
+| aarch64 | NEON | 128-bit (4 floats) |
+| other | — | Scalar |
 
-Threshold: SIMD only used when dimension ≥ 16 (overhead not worth it for small vectors).
+**Threshold:** SIMD only for dimension ≥ 16. Below that, loop overhead exceeds benefit.
+
+**Why not ndarray/nalgebra?**
+- Would add ~50 transitive deps
+- We only need dot/cosine/maxsim
+- Hand-written is ~10 lines per function
 
 ## Token Pooling
 
-For ColBERT-style models, token count dominates storage. Pooling reduces tokens:
+ColBERT stores $|D|$ embeddings per document. Pooling reduces to $|D|/k$:
 
-| Factor | Reduction | Quality Loss |
-|--------|-----------|--------------|
+| Factor | Storage | Quality Loss |
+|--------|---------|--------------|
 | 2x | 50% | ~0% |
-| 4x | 75% | <5% |
-| 8x | 87.5% | <10% |
+| 4x | 25% | <5% |
+| 8x | 12.5% | <10% |
 
-From [Clavié et al., 2024](https://arxiv.org/abs/2409.14683).
+From Clavié et al. (2024).
 
-```rust
-let pooled = pool_tokens(&doc_tokens, 4); // 75% reduction
-```
+**Methods:**
+- `pool_tokens`: Greedy agglomerative, O(n)
+- `pool_tokens_hierarchical`: Ward's method, O(n²), better quality
 
-Pooling happens at **indexing time only** — queries stay full resolution.
+**Key insight:** Pooling is index-time only. Queries stay full resolution.
 
-## API Design
+## Why One Crate?
 
-### Generic over ID Type
+We considered `rank-select` for diversity. Arguments against:
 
-```rust
-rank::<&str>(&query, &[("doc1", &emb1), ("doc2", &emb2)])
-rank::<u64>(&query, &[(1, &emb1), (2, &emb2)])
-```
+1. **Shared code:** MMR uses `cosine` from simd module
+2. **Pipeline:** Users score → diversify in sequence
+3. **Size:** MMR is ~150 lines
 
-### Slice-Based (Zero-Copy)
+Mathematical distinction is documented, but practical separation isn't justified.
 
-```rust
-// No allocation — works on borrowed data
-let score = maxsim(&q_tokens, &d_tokens);
-```
+## Alternatives Considered
 
-### BYOM (Bring Your Own Model)
+**Why not bundle inference?**
+- Would require ONNX/candle/etc. — heavy deps
+- Users have preferred runtimes
+- BYOM is more flexible
 
-No inference code bundled. Use fastembed, ort, candle, rust-bert, etc.
-
-```rust
-// You provide embeddings
-let embeddings: Vec<Vec<f32>> = my_model.encode(&texts)?;
-
-// We score them
-let ranked = rank(&query_emb, &candidates);
-```
-
-## Relationship to rank-fusion
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           RETRIEVAL PIPELINE                                │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   Retrieval        Fusion           Scoring          Selection              │
-│   ─────────────    ───────────      ───────────      ───────────            │
-│   BM25 → list1  ─┐                                                          │
-│   Dense → list2 ─┼──▶ rank-fusion ──▶ rank-refine ──▶ rank-refine           │
-│   Sparse → list3 ┘    (combine)      (rescore)       (diversity.mmr)        │
-│                                                                             │
-│   Math field:      Social Choice    Learning to Rank  Submodular            │
-│   Uses content:    No               Yes               Yes (inter-item)      │
-│   Typical count:   1000s → 100      100 → 50          50 → 10               │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+**Why not use faiss-rs or qdrant's SIMD?**
+- faiss-rs requires C++ toolchain
+- qdrant is server-focused
+- We want minimal, embeddable library
 
 ## References
 
-### Learning to Rank
-- [Liu, 2011](https://link.springer.com/book/10.1007/978-3-642-14267-3) — Learning to Rank for IR (textbook)
-- [Nogueira & Cho, 2019](https://arxiv.org/abs/1901.04085) — BERT for passage reranking
+### Scoring
+- Khattab & Zaharia (2020). [ColBERT](https://arxiv.org/abs/2004.12832)
+- Nogueira & Cho (2019). [BERT for Passage Reranking](https://arxiv.org/abs/1901.04085)
+- Kusupati et al. (2022). [Matryoshka Embeddings](https://arxiv.org/abs/2205.13147)
 
-### Late Interaction
-- [Khattab & Zaharia, 2020](https://arxiv.org/abs/2004.12832) — ColBERT
-- [Santhanam et al., 2022](https://arxiv.org/abs/2205.09707) — ColBERTv2
+### Diversity
+- Carbonell & Goldstein (1998). [MMR](https://dl.acm.org/doi/10.1145/290941.291025)
+- Nemhauser et al. (1978). [Submodular Maximization](https://link.springer.com/article/10.1007/BF01588971)
 
-### Matryoshka
-- [Kusupati et al., 2022](https://arxiv.org/abs/2205.13147) — MRL embeddings
-- [Wang et al., 2024](https://arxiv.org/abs/2411.17299) — 2D Matryoshka
-
-### Submodular Optimization
-- [Nemhauser et al., 1978](https://link.springer.com/article/10.1007/BF01588971) — Greedy approximation
-- [Carbonell & Goldstein, 1998](https://dl.acm.org/doi/10.1145/290941.291025) — MMR
-- [Krause & Golovin, 2014](https://las.inf.ethz.ch/files/krause12survey.pdf) — Submodular survey
+### Token Pooling
+- Clavié et al. (2024). [Token Pooling for ColBERT](https://arxiv.org/abs/2409.14683)

@@ -1,172 +1,123 @@
 # rank-refine
 
-Reranking algorithms for retrieval pipelines.
+Rescore search candidates with embeddings. SIMD-accelerated.
 
 [![CI](https://github.com/arclabs561/rank-refine/actions/workflows/ci.yml/badge.svg)](https://github.com/arclabs561/rank-refine/actions)
 [![Crates.io](https://img.shields.io/crates/v/rank-refine.svg)](https://crates.io/crates/rank-refine)
 [![Docs](https://docs.rs/rank-refine/badge.svg)](https://docs.rs/rank-refine)
-[![MSRV](https://img.shields.io/badge/MSRV-1.74-blue)](https://blog.rust-lang.org/2023/11/16/Rust-1.74.0.html)
 
-**Zero dependencies** by default. BYOM (bring your own model).
+**Zero dependencies** by default. Adds ~0.2s to compile, ~50KB to binary.
 
-## The Retrieval Funnel Problem
+## When to Use
 
-You want to run expensive, accurate models on your documents. But you have millions of them.
-
-```
-                    ┌───────────────────┐
-                    │  10M documents    │  Can't run BERT on all of these
-                    └─────────┬─────────┘
-                              │
-                    ┌─────────▼─────────┐
-   Initial          │  ANN / BM25       │  Fast, approximate
-   Retrieval        │  ~10ms            │  Recall: 90%, Precision: 30%
-                    └─────────┬─────────┘
-                              │
-                    ┌─────────▼─────────┐
-                    │  Top 100          │  Small enough for expensive ops
-                    └─────────┬─────────┘
-                              │
-                    ┌─────────▼─────────┐
-   Reranking        │  Cross-encoder    │  Slow, accurate
-   (rank-refine)    │  ColBERT MaxSim   │  
-                    │  MRL refinement   │  
-                    └─────────┬─────────┘
-                              │
-                    ┌─────────▼─────────┐
-                    │  Top 10           │  High precision for LLM context
-                    └───────────────────┘
-```
-
-The compute-accuracy tradeoff is fundamental:
-- **Bi-encoders** (initial retrieval): Encode query and docs separately, compare with dot product. O(1) per doc.
-- **Cross-encoders** (reranking): Encode query+doc together, attend across both. O(n) per doc, but much more accurate.
-
-You can't afford cross-encoders on millions of docs. But you can afford them on 100.
-
-## What This Crate Does
-
-rank-refine provides the **scoring algorithms** for the reranking stage. No model weights,
-no inference runtime—you bring embeddings from fastembed, candle, ort, or serialize from Python.
+You have candidates from initial retrieval and want better ranking using embeddings.
 
 ```rust
-use rank_refine::prelude::*;
+use rank_refine::simd::cosine;
 
-// Dense scoring (SIMD-accelerated)
 let score = cosine(&query_emb, &doc_emb);
-
-// Late interaction (ColBERT MaxSim)
-let score = maxsim_vecs(&query_tokens, &doc_tokens);
 ```
 
-## Algorithms: When to Use What
+## When NOT to Use
 
-| You Have | Method | Accuracy | Speed | When to Use |
-|----------|--------|----------|-------|-------------|
-| Dense embeddings | `cosine` / `dot` | Baseline | 0.1μs | Fast re-scoring |
-| Token embeddings (ColBERT) | `maxsim_vecs` | +5-10% | 50μs | Fine-grained matching |
-| Matryoshka embeddings | `mrl_refine` | +2-5% | 1μs | Two-stage MRL |
-| Any model callable | `CrossEncoderModel` | +10-20% | 10ms | Maximum accuracy |
+- Vector DB handles reranking → use theirs
+- No embeddings available → use [`rank-fusion`](https://crates.io/crates/rank-fusion) with scores only
+- Need model inference → use fastembed, candle, ort (we only score, not embed)
 
-**Dense (cosine/dot)**: Your baseline. SIMD-accelerated, works with any bi-encoder output.
+## The Problem
 
-**ColBERT MaxSim**: Instead of one embedding per doc, you have one per token. MaxSim finds
-the best token-level match for each query token, then sums. Captures fine-grained similarity
-that single-vector embeddings miss.
+Initial retrieval is fast but imprecise. Expensive models are accurate but slow.
 
-**Matryoshka (MRL)**: Some embedding models (e.g., `nomic-embed-text-v1.5`) are trained so
-that prefixes of the embedding are useful. You store 256-dim, retrieve with first 64 dims,
-refine with full 256. The tail dimensions add signal without re-embedding.
+```
+10M docs → ANN (10ms) → 100 candidates → rerank (5ms) → 10 results
+```
 
-**Cross-encoder**: The accuracy ceiling. You implement the `CrossEncoderModel` trait with
-your inference backend (ONNX, candle, etc.). Query and doc are encoded together with
-full cross-attention.
+This crate is the reranking step.
 
-## Token Pooling (ColBERT Storage Reduction)
+## Methods
 
-ColBERT's per-token embeddings are expensive to store. If your docs average 200 tokens
-at 128 dims, that's 100KB per doc. Pooling reduces this:
+| Method | Speed | Quality | Input |
+|--------|-------|---------|-------|
+| `cosine` / `dot` | ~0.1μs | Baseline | Dense embeddings |
+| `maxsim` | ~50μs | +5-15% | Token embeddings |
+| `CrossEncoderModel` | ~10ms | +10-20% | Text pairs |
+
+### Dense (cosine/dot)
 
 ```rust
-use rank_refine::colbert::pool_tokens;
+use rank_refine::simd::{cosine, dot};
 
-let tokens: Vec<Vec<f32>> = embed_doc(doc);  // 200 x 128
-let pooled = pool_tokens(&tokens, 4);         // 50 x 128 (4x reduction)
+let score = cosine(&query, &doc);  // normalized
+let score = dot(&query, &doc);     // unnormalized
 ```
 
-Pooling clusters similar tokens. For 4x+ compression, enable the `hierarchical` feature
-for Ward's method clustering instead of greedy agglomerative.
+SIMD auto-dispatches: AVX2+FMA on x86_64, NEON on ARM.
 
-## SIMD Acceleration
+### ColBERT (MaxSim)
 
-Vector operations auto-dispatch to:
-- **x86_64**: AVX2 + FMA when available
-- **aarch64**: NEON
+Per-token embeddings, finer-grained matching:
 
-No runtime flags needed. Fallback to portable code on other platforms.
-
-## Quick Start
+```math
+\text{MaxSim}(Q, D) = \sum_{q \in Q} \max_{d \in D} \text{sim}(q, d)
+```
 
 ```rust
-use rank_refine::prelude::*;
+use rank_refine::colbert::{maxsim, rank};
 
-// Get embeddings from your model (fastembed, candle, etc.)
-let query_emb: Vec<f32> = model.embed("query");
-let doc_embs: Vec<Vec<f32>> = model.embed_batch(&docs);
-
-// Score with SIMD-accelerated cosine
-let scores: Vec<f32> = doc_embs.iter()
-    .map(|d| cosine(&query_emb, d))
-    .collect();
-
-// Or use the Scorer trait
-let scorer = DenseScorer::Cosine;
-let ranked = scorer.rank(&query_emb, &doc_refs);
+let score = maxsim(&query_tokens, &doc_tokens);
 ```
 
-## Diversity Selection
+### Cross-encoder
 
-After scoring, you often want diverse results (not just the top-k most similar):
+Implement the trait with your inference backend:
+
+```rust
+impl CrossEncoderModel for MyModel {
+    fn score(&self, query: &str, doc: &str) -> f32 { /* ... */ }
+}
+```
+
+## Diversity (MMR)
+
+Select diverse results, not just top-k most similar:
+
+```math
+\text{MMR} = \arg\max_{d} \left[ \lambda \cdot \text{rel}(d) - (1-\lambda) \cdot \max_{s \in S} \text{sim}(d, s) \right]
+```
 
 ```rust
 use rank_refine::diversity::{mmr_cosine, MmrConfig};
 
-// relevance_scores from your reranker
-// embeddings from your model
-let diverse = mmr_cosine(&relevance_scores, &embeddings, MmrConfig::balanced(10));
+let config = MmrConfig::default().with_top_k(10);
+let diverse = mmr_cosine(&candidates, &query_emb, config);
 ```
 
-MMR (Maximal Marginal Relevance) balances relevance vs. novelty:
-- λ=1.0: Pure relevance (top-k by score)
-- λ=0.5: Balanced (default)
-- λ=0.0: Maximum diversity
+- λ=1.0: pure relevance
+- λ=0.5: balanced (default)
+- λ=0.0: maximum diversity
 
-## Modules
+## Token Pooling
 
-| Module | Purpose |
-|--------|---------|
-| `simd` | Vector ops (dot, cosine, maxsim) — AVX2/NEON accelerated |
-| `colbert` | MaxSim late interaction + token pooling |
-| `matryoshka` | MRL tail dimension refinement |
-| `crossencoder` | Trait for cross-encoder models |
-| `scoring` | Unified `Scorer`, `TokenScorer`, `Pooler` traits |
-| `diversity` | MMR for diverse result selection |
+Reduce ColBERT storage:
+
+```rust
+use rank_refine::colbert::pool_tokens;
+
+let pooled = pool_tokens(&doc_tokens, 4);  // 75% smaller, <5% quality loss
+```
 
 ## Features
 
-| Feature | Description |
-|---------|-------------|
-| `hierarchical` | Ward's method clustering for better pooling at 4x+ compression |
+| Feature | Adds | Purpose |
+|---------|------|---------|
+| `hierarchical` | kodama | Better pooling at 4x+ compression |
 
 ## Design
 
-See [DESIGN.md](DESIGN.md) for mathematical foundations:
-- **Scoring**: Learning to rank (f(query, doc) → score)
-- **Selection**: Submodular optimization (f(set) → diverse subset)
-
-## Related
-
-- [`rank-fusion`](https://crates.io/crates/rank-fusion) — Combine ranked lists (RRF, CombMNZ, Borda)
+See [DESIGN.md](DESIGN.md) for:
+- Scoring paradigms (dense vs late interaction vs cross-encoder)
+- Submodular optimization (MMR)
+- SIMD implementation details
 
 ## License
 
