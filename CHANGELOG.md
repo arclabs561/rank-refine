@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.7.28] - 2025-11-27
+
+### Added
+- **Token importance weighting** for MaxSim (based on [arXiv:2511.16106](https://arxiv.org/abs/2511.16106))
+  - `simd::maxsim_weighted(&query, &doc, &weights)` — weighted dot-product MaxSim
+  - `simd::maxsim_cosine_weighted` — weighted cosine MaxSim
+  - `simd::maxsim_weighted_vecs` — convenience wrapper for owned vectors
+  - `LateInteractionScorer::score_weighted` — trait method for weighted scoring
+  - Formula: `score = Σᵢ wᵢ × maxⱼ(Qᵢ · Dⱼ)` where wᵢ is query token importance
+  - Use case: IDF weighting, learned importance, rare term boosting
+- 12 new tests for weighted MaxSim (unit + property tests)
+
+## [0.7.27] - 2025-11-27
+
+### Changed
+- **Breaking**: `RefineConfig::with_alpha` now clamps to \[0, 1\] (was unchecked)
+- **Breaking**: `MmrConfig::new` and `with_lambda` now clamp to \[0, 1\] (was unchecked)
+- Simplified prelude: exports only core functions (`cosine`, `dot`, `maxsim`, `norm`, `pool_tokens`, `colbert_rank`, `mmr`, `MmrConfig`, `CrossEncoderModel`)
+- Simplified lib.rs documentation
+
+### Added
+- Tests for parameter clamping (`refine_config_clamps_alpha`, `mmr_config_clamps_lambda`)
+
 ## [0.7.26] - 2025-11-27
 
 ### Added

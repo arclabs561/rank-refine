@@ -1,7 +1,6 @@
-//! Reranking algorithms for retrieval pipelines.
+//! Rerank search candidates with embeddings. SIMD-accelerated.
 //!
-//! You bring embeddings, this crate does the math. No model weights, no inference,
-//! no downloads. Get embeddings from fastembed, candle, ort, or serialize from Python.
+//! You bring embeddings, this crate scores them. No model weights, no inference.
 //!
 //! # Quick Start
 //!
@@ -19,44 +18,15 @@
 //!
 //! # Modules
 //!
-//! - [`simd`] — SIMD-accelerated vector ops (dot, cosine, maxsim)
-//! - [`colbert`] — Late interaction ranking and token pooling
-//! - [`matryoshka`] — MRL tail dimension refinement
-//! - [`crossencoder`] — Cross-encoder trait for transformer models
-//! - [`scoring`] — Unified traits for dense/late-interaction scoring
-//! - [`embedding`] — Type-safe embedding wrappers (normalized, query/doc roles, masking)
-//! - [`diversity`] — MMR and diversity-aware reranking
+//! | Module | Purpose |
+//! |--------|---------|
+//! | [`simd`] | SIMD vector ops (dot, cosine, maxsim) |
+//! | [`colbert`] | Late interaction ranking, token pooling |
+//! | [`diversity`] | MMR diversity selection |
+//! | [`crossencoder`] | Cross-encoder trait |
+//! | [`matryoshka`] | MRL tail refinement |
 //!
-//! # Cross-Encoder Integration
-//!
-//! Implement [`crossencoder::CrossEncoderModel`] to use your inference backend:
-//!
-//! ```rust
-//! use rank_refine::crossencoder::CrossEncoderModel;
-//!
-//! struct MyModel;
-//!
-//! impl CrossEncoderModel for MyModel {
-//!     fn score_batch(&self, query: &str, documents: &[&str]) -> Vec<f32> {
-//!         // Your ONNX/candle/tch inference here
-//!         vec![0.5; documents.len()]
-//!     }
-//! }
-//! ```
-//!
-//! # Token Pooling
-//!
-//! Reduce ColBERT storage by clustering similar tokens:
-//!
-//! ```rust
-//! use rank_refine::colbert;
-//!
-//! let tokens: Vec<Vec<f32>> = vec![vec![1.0; 128]; 32];
-//! let pooled = colbert::pool_tokens(&tokens, 2); // 50% reduction
-//! assert!(pooled.len() <= 16);
-//! ```
-//!
-//! For aggressive pooling (4x+), enable the `hierarchical` feature for Ward's method.
+//! Advanced: [`scoring`] for trait-based polymorphism, [`embedding`] for type-safe wrappers.
 
 pub mod colbert;
 pub mod crossencoder;
@@ -72,32 +42,17 @@ pub mod simd;
 /// use rank_refine::prelude::*;
 /// ```
 pub mod prelude {
-    // Type-safe embeddings
-    pub use crate::embedding::{maxsim_masked, normalize, MaskedTokens, Normalized};
+    // Core SIMD functions
+    pub use crate::simd::{cosine, dot, maxsim, norm};
 
-    // Traits and types
-    pub use crate::scoring::{
-        DenseScorer, FnPooler, LateInteractionScorer, Pooler, Scorer, TokenScorer,
-    };
+    // ColBERT
+    pub use crate::colbert::{pool_tokens, rank as colbert_rank};
 
-    // SIMD functions
-    pub use crate::simd::{cosine, dot, maxsim, maxsim_cosine, maxsim_vecs, norm};
+    // Diversity
+    pub use crate::diversity::{mmr, MmrConfig};
 
-    // Matryoshka (MRL) refinement
-    pub use crate::matryoshka::{refine as mrl_refine, try_refine as mrl_try_refine};
-    pub use crate::RefineConfig;
-
-    // ColBERT late interaction
-    pub use crate::colbert::{pool_tokens, rank as colbert_rank, TokenIndex};
-
-    // Cross-encoder
+    // Cross-encoder trait
     pub use crate::crossencoder::CrossEncoderModel;
-
-    // Diversity reranking
-    pub use crate::diversity::{mmr, mmr_cosine, try_mmr, MmrConfig};
-
-    // Utilities
-    pub use crate::{as_slices, RefineError};
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -194,10 +149,14 @@ impl Default for RefineConfig {
 }
 
 impl RefineConfig {
-    /// Set blending weight.
+    /// Set blending weight. Clamped to \[0, 1\].
+    ///
+    /// - `0.0` = all refinement score
+    /// - `0.5` = equal blend (default)
+    /// - `1.0` = all original score
     #[must_use]
-    pub const fn with_alpha(mut self, alpha: f32) -> Self {
-        self.alpha = alpha;
+    pub fn with_alpha(mut self, alpha: f32) -> Self {
+        self.alpha = alpha.clamp(0.0, 1.0);
         self
     }
 
@@ -224,5 +183,17 @@ impl RefineConfig {
             alpha: 1.0,
             top_k: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn refine_config_clamps_alpha() {
+        assert_eq!(RefineConfig::default().with_alpha(-0.5).alpha, 0.0);
+        assert_eq!(RefineConfig::default().with_alpha(1.5).alpha, 1.0);
+        assert_eq!(RefineConfig::default().with_alpha(0.7).alpha, 0.7);
     }
 }

@@ -140,6 +140,101 @@ pub fn maxsim_cosine(query_tokens: &[&[f32]], doc_tokens: &[&[f32]]) -> f32 {
         .sum()
 }
 
+/// Weighted `MaxSim`: token importance weighting.
+///
+/// Formula: `score(Q, D) = Σᵢ wᵢ × maxⱼ(Qᵢ · Dⱼ)`
+///
+/// Weights allow prioritizing important query tokens (e.g., by IDF).
+/// Research shows ~2-5% quality improvement when using learned weights.
+///
+/// See [Incorporating Token Importance in Multi-Vector Retrieval](https://arxiv.org/abs/2511.16106).
+///
+/// # Arguments
+///
+/// * `query_tokens` - Query token embeddings
+/// * `doc_tokens` - Document token embeddings
+/// * `weights` - Per-query-token importance weights (should have same length as `query_tokens`)
+///
+/// # Behavior
+///
+/// - If `weights.len() < query_tokens.len()`, missing weights default to 1.0
+/// - If `weights.len() > query_tokens.len()`, extra weights are ignored
+/// - If weights sum to 0, returns 0.0
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::simd::maxsim_weighted;
+///
+/// let query = vec![[1.0, 0.0], [0.0, 1.0]];
+/// let doc = vec![[0.9, 0.1], [0.1, 0.9]];
+/// let q_refs: Vec<&[f32]> = query.iter().map(|t| t.as_slice()).collect();
+/// let d_refs: Vec<&[f32]> = doc.iter().map(|t| t.as_slice()).collect();
+///
+/// // First token is more important (IDF weighting)
+/// let weights = [2.0, 0.5];
+/// let score = maxsim_weighted(&q_refs, &d_refs, &weights);
+/// ```
+#[inline]
+#[must_use]
+pub fn maxsim_weighted(query_tokens: &[&[f32]], doc_tokens: &[&[f32]], weights: &[f32]) -> f32 {
+    if query_tokens.is_empty() || doc_tokens.is_empty() {
+        return 0.0;
+    }
+    query_tokens
+        .iter()
+        .enumerate()
+        .map(|(i, q)| {
+            let w = weights.get(i).copied().unwrap_or(1.0);
+            let max_sim = doc_tokens
+                .iter()
+                .map(|d| dot(q, d))
+                .fold(f32::NEG_INFINITY, f32::max);
+            w * max_sim
+        })
+        .sum()
+}
+
+/// Weighted `MaxSim` with cosine similarity.
+///
+/// See [`maxsim_weighted`] for details.
+#[inline]
+#[must_use]
+pub fn maxsim_cosine_weighted(
+    query_tokens: &[&[f32]],
+    doc_tokens: &[&[f32]],
+    weights: &[f32],
+) -> f32 {
+    if query_tokens.is_empty() || doc_tokens.is_empty() {
+        return 0.0;
+    }
+    query_tokens
+        .iter()
+        .enumerate()
+        .map(|(i, q)| {
+            let w = weights.get(i).copied().unwrap_or(1.0);
+            let max_sim = doc_tokens
+                .iter()
+                .map(|d| cosine(q, d))
+                .fold(f32::NEG_INFINITY, f32::max);
+            w * max_sim
+        })
+        .sum()
+}
+
+/// Weighted `MaxSim` for owned vectors (convenience wrapper).
+#[inline]
+#[must_use]
+pub fn maxsim_weighted_vecs(
+    query_tokens: &[Vec<f32>],
+    doc_tokens: &[Vec<f32>],
+    weights: &[f32],
+) -> f32 {
+    let q = crate::as_slices(query_tokens);
+    let d = crate::as_slices(doc_tokens);
+    maxsim_weighted(&q, &d, weights)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Convenience wrappers for owned vectors
 // ─────────────────────────────────────────────────────────────────────────────
@@ -567,6 +662,120 @@ mod tests {
         assert!((norm(&[1.0, 0.0]) - 1.0).abs() < 1e-9, "unit x");
         assert!((norm(&[0.0, 0.0]) - 0.0).abs() < 1e-9, "zero vector");
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Weighted MaxSim tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn maxsim_weighted_basic() {
+        let q1 = [1.0, 0.0];
+        let q2 = [0.0, 1.0];
+        let d1 = [1.0, 0.0]; // dot(q1,d1)=1.0, dot(q2,d1)=0.0
+        let d2 = [0.0, 1.0]; // dot(q1,d2)=0.0, dot(q2,d2)=1.0
+
+        let query: Vec<&[f32]> = vec![&q1, &q2];
+        let doc: Vec<&[f32]> = vec![&d1, &d2];
+
+        // Without weights: max(q1)=1.0 + max(q2)=1.0 = 2.0
+        let unweighted = maxsim(&query, &doc);
+        assert!((unweighted - 2.0).abs() < 1e-5);
+
+        // With equal weights: same result
+        let equal_weights = [1.0, 1.0];
+        let weighted_equal = maxsim_weighted(&query, &doc, &equal_weights);
+        assert!((weighted_equal - 2.0).abs() < 1e-5);
+
+        // With 2x weight on first query token
+        let weights = [2.0, 1.0];
+        let weighted = maxsim_weighted(&query, &doc, &weights);
+        // Expected: 2.0*1.0 + 1.0*1.0 = 3.0
+        assert!((weighted - 3.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn maxsim_weighted_single_token() {
+        let q = [1.0, 0.0, 0.0];
+        let d = [1.0, 0.0, 0.0];
+
+        let query: Vec<&[f32]> = vec![&q];
+        let doc: Vec<&[f32]> = vec![&d];
+
+        // Weight of 2.0 should double the score
+        let weights = [2.0];
+        let score = maxsim_weighted(&query, &doc, &weights);
+        assert!((score - 2.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn maxsim_weighted_empty() {
+        let q1 = [1.0, 0.0];
+        let query: Vec<&[f32]> = vec![&q1];
+        let empty: Vec<&[f32]> = vec![];
+        let weights = [1.0];
+
+        assert_eq!(maxsim_weighted(&query, &empty, &weights), 0.0);
+        assert_eq!(maxsim_weighted(&[], &query, &weights), 0.0);
+    }
+
+    #[test]
+    fn maxsim_weighted_missing_weights_default_to_one() {
+        let q1 = [1.0, 0.0];
+        let q2 = [0.0, 1.0];
+        let d = [1.0, 1.0]; // dot=1 with each
+
+        let query: Vec<&[f32]> = vec![&q1, &q2];
+        let doc: Vec<&[f32]> = vec![&d];
+
+        // Only one weight provided, second should default to 1.0
+        let weights = [2.0]; // only for first token
+        let score = maxsim_weighted(&query, &doc, &weights);
+        // Expected: 2.0*1.0 + 1.0*1.0 = 3.0
+        assert!((score - 3.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn maxsim_weighted_zero_weight_ignores_token() {
+        let q1 = [1.0, 0.0];
+        let q2 = [0.0, 1.0];
+        let d = [1.0, 0.0]; // dot(q1,d)=1.0, dot(q2,d)=0.0
+
+        let query: Vec<&[f32]> = vec![&q1, &q2];
+        let doc: Vec<&[f32]> = vec![&d];
+
+        // Zero weight on q2 means only q1 contributes
+        let weights = [1.0, 0.0];
+        let score = maxsim_weighted(&query, &doc, &weights);
+        // Expected: 1.0*1.0 + 0.0*0.0 = 1.0
+        assert!((score - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn maxsim_cosine_weighted_basic() {
+        let q1 = [2.0, 0.0]; // unnormalized
+        let q2 = [0.0, 3.0]; // unnormalized
+        let d = [1.0, 0.0]; // cosine(q1,d)=1.0, cosine(q2,d)=0.0
+
+        let query: Vec<&[f32]> = vec![&q1, &q2];
+        let doc: Vec<&[f32]> = vec![&d];
+
+        // q1 has cosine 1.0 with d, q2 has cosine 0.0
+        let weights = [2.0, 1.0];
+        let score = maxsim_cosine_weighted(&query, &doc, &weights);
+        // Expected: 2.0*1.0 + 1.0*0.0 = 2.0
+        assert!((score - 2.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn maxsim_weighted_vecs_convenience() {
+        let query = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+        let doc = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+        let weights = [2.0, 0.5];
+
+        let score = maxsim_weighted_vecs(&query, &doc, &weights);
+        // Expected: 2.0*1.0 + 0.5*1.0 = 2.5
+        assert!((score - 2.5).abs() < 1e-5);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -790,6 +999,87 @@ mod proptests {
                 score,
                 upper_bound
             );
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // Weighted MaxSim property tests
+        // ─────────────────────────────────────────────────────────────────────────
+
+        /// Weighted MaxSim with all weights=1 equals unweighted
+        #[test]
+        fn maxsim_weighted_unit_weights_equals_unweighted(
+            q_data in proptest::collection::vec(arb_vec(8), 1..5),
+            d_data in proptest::collection::vec(arb_vec(8), 1..5)
+        ) {
+            let q_refs: Vec<&[f32]> = q_data.iter().map(Vec::as_slice).collect();
+            let d_refs: Vec<&[f32]> = d_data.iter().map(Vec::as_slice).collect();
+            let weights: Vec<f32> = vec![1.0; q_data.len()];
+
+            let unweighted = maxsim(&q_refs, &d_refs);
+            let weighted = maxsim_weighted(&q_refs, &d_refs, &weights);
+
+            prop_assert!(
+                (unweighted - weighted).abs() < 1e-5,
+                "unweighted {} != weighted {}",
+                unweighted,
+                weighted
+            );
+        }
+
+        /// Weighted MaxSim scales with uniform weight
+        #[test]
+        fn maxsim_weighted_uniform_scaling(
+            q_data in proptest::collection::vec(arb_vec(8), 1..4),
+            d_data in proptest::collection::vec(arb_vec(8), 1..4),
+            scale in 0.1f32..5.0
+        ) {
+            let q_refs: Vec<&[f32]> = q_data.iter().map(Vec::as_slice).collect();
+            let d_refs: Vec<&[f32]> = d_data.iter().map(Vec::as_slice).collect();
+            let weights: Vec<f32> = vec![scale; q_data.len()];
+
+            let unweighted = maxsim(&q_refs, &d_refs);
+            let weighted = maxsim_weighted(&q_refs, &d_refs, &weights);
+
+            let expected = scale * unweighted;
+            // Use relative tolerance for large values
+            let tolerance = (expected.abs() * 1e-4).max(1e-4);
+            prop_assert!(
+                (weighted - expected).abs() < tolerance,
+                "weighted {} != scale * unweighted {}",
+                weighted,
+                expected
+            );
+        }
+
+        /// Weighted MaxSim with all zero weights returns 0
+        #[test]
+        fn maxsim_weighted_zero_weights_returns_zero(
+            q_data in proptest::collection::vec(arb_vec(8), 1..4),
+            d_data in proptest::collection::vec(arb_vec(8), 1..4)
+        ) {
+            let q_refs: Vec<&[f32]> = q_data.iter().map(Vec::as_slice).collect();
+            let d_refs: Vec<&[f32]> = d_data.iter().map(Vec::as_slice).collect();
+            let weights: Vec<f32> = vec![0.0; q_data.len()];
+
+            let weighted = maxsim_weighted(&q_refs, &d_refs, &weights);
+            prop_assert!(
+                weighted.abs() < 1e-9,
+                "zero weights should give 0, got {}",
+                weighted
+            );
+        }
+
+        /// Weighted MaxSim empty inputs return 0
+        #[test]
+        fn maxsim_weighted_empty_returns_zero(
+            weights in proptest::collection::vec(0.1f32..2.0, 0..5)
+        ) {
+            let empty_q: Vec<&[f32]> = vec![];
+            let empty_d: Vec<&[f32]> = vec![];
+            let some_q: Vec<&[f32]> = vec![&[1.0, 0.0]];
+
+            prop_assert_eq!(maxsim_weighted(&empty_q, &some_q, &weights), 0.0);
+            prop_assert_eq!(maxsim_weighted(&some_q, &empty_d, &weights), 0.0);
         }
     }
 }

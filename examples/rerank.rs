@@ -2,7 +2,7 @@
 //!
 //! Run: `cargo run --example rerank`
 
-use rank_refine::prelude::*;
+use rank_refine::simd::cosine;
 
 fn main() {
     // Simulated embeddings (in real usage, get these from fastembed/candle/etc.)
@@ -19,28 +19,20 @@ fn main() {
         println!("  {id}: {:?}", emb);
     }
 
-    // Method 1: Simple cosine similarity scoring
+    // Score with cosine similarity
     println!("\n=== Cosine Similarity ===");
-    let scorer = DenseScorer::Cosine;
-    let doc_refs: Vec<(&str, &[f32])> = documents
+    let mut scored: Vec<_> = documents
         .iter()
-        .map(|(id, emb)| (*id, emb.as_slice()))
+        .map(|(id, emb)| (*id, cosine(&query, emb)))
         .collect();
-    let ranked = scorer.rank(&query, &doc_refs);
-    for (id, score) in &ranked {
+    scored.sort_by(|a, b| b.1.total_cmp(&a.1));
+    for (id, score) in &scored {
         println!("  {id}: {score:.4}");
     }
 
-    // Method 2: Raw SIMD cosine
-    println!("\n=== SIMD Functions ===");
-    for (id, emb) in &documents {
-        let sim = cosine(&query, emb);
-        println!("  cosine({id}): {sim:.4}");
-    }
-
-    // Method 3: Matryoshka refinement (use head dims first, then refine)
+    // Matryoshka refinement (use head dims first, then refine with tail)
     println!("\n=== Matryoshka Refinement ===");
-    // Simulated 8-dim embeddings for MRL
+    // 8-dim embeddings: head (first 4) + tail (last 4)
     let query_8d = vec![0.8, 0.2, 0.1, 0.05, 0.3, 0.1, 0.2, 0.1];
     let docs_8d: Vec<(&str, Vec<f32>)> = vec![
         ("doc_a", vec![0.75, 0.25, 0.1, 0.1, 0.2, 0.1, 0.1, 0.1]),
@@ -55,8 +47,7 @@ fn main() {
         .collect();
     println!("Initial (4-dim head): {:?}", initial);
 
-    // Refine using tail dimensions (dims 4-7)
-    // mrl_refine signature: (candidates, query, docs, head_dims)
+    // Refine using all 8 dims
     let refined = rank_refine::matryoshka::refine(&initial, &query_8d, &docs_8d, 4);
     println!("Refined (8-dim full): {:?}", refined);
 }

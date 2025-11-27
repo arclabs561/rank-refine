@@ -129,6 +129,49 @@ impl LateInteractionScorer {
             Self::MaxSimCosine => simd::maxsim_cosine(query_tokens, doc_tokens),
         }
     }
+
+    /// Weighted score: apply per-token importance weights.
+    ///
+    /// Formula: `score = Σᵢ wᵢ × maxⱼ(Qᵢ · Dⱼ)`
+    ///
+    /// Weights allow prioritizing important query tokens (e.g., by IDF).
+    /// Research shows ~2-5% quality improvement with learned weights.
+    ///
+    /// See [arXiv:2511.16106](https://arxiv.org/abs/2511.16106) for details.
+    ///
+    /// # Arguments
+    ///
+    /// * `query_tokens` - Query token embeddings
+    /// * `doc_tokens` - Document token embeddings
+    /// * `weights` - Per-query-token importance weights
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use rank_refine::scoring::LateInteractionScorer;
+    ///
+    /// let scorer = LateInteractionScorer::MaxSimDot;
+    /// let query = vec![[1.0, 0.0], [0.0, 1.0]];
+    /// let doc = vec![[0.9, 0.1], [0.1, 0.9]];
+    /// let q_refs: Vec<&[f32]> = query.iter().map(|t| t.as_slice()).collect();
+    /// let d_refs: Vec<&[f32]> = doc.iter().map(|t| t.as_slice()).collect();
+    ///
+    /// // First token (e.g., rare term) is more important
+    /// let weights = [2.0, 0.5];
+    /// let score = scorer.score_weighted(&q_refs, &d_refs, &weights);
+    /// ```
+    #[must_use]
+    pub fn score_weighted(
+        &self,
+        query_tokens: &[&[f32]],
+        doc_tokens: &[&[f32]],
+        weights: &[f32],
+    ) -> f32 {
+        match self {
+            Self::MaxSimDot => simd::maxsim_weighted(query_tokens, doc_tokens, weights),
+            Self::MaxSimCosine => simd::maxsim_cosine_weighted(query_tokens, doc_tokens, weights),
+        }
+    }
 }
 
 /// Late interaction scoring: `f(Q, D) = Σᵢ maxⱼ(Qᵢ · Dⱼ)`.

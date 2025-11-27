@@ -89,16 +89,23 @@ impl Default for MmrConfig {
 }
 
 impl MmrConfig {
-    /// Create config with custom lambda and k.
+    /// Create config with custom lambda and k. Lambda clamped to \[0, 1\].
     #[must_use]
-    pub const fn new(lambda: f32, k: usize) -> Self {
-        Self { lambda, k }
+    pub fn new(lambda: f32, k: usize) -> Self {
+        Self {
+            lambda: lambda.clamp(0.0, 1.0),
+            k,
+        }
     }
 
-    /// Set lambda (relevance-diversity tradeoff).
+    /// Set lambda (relevance-diversity tradeoff). Clamped to \[0, 1\].
+    ///
+    /// - `0.0` = maximum diversity (ignore relevance)
+    /// - `0.5` = balanced (default)
+    /// - `1.0` = pure relevance (ignore diversity)
     #[must_use]
-    pub const fn with_lambda(mut self, lambda: f32) -> Self {
-        self.lambda = lambda;
+    pub fn with_lambda(mut self, lambda: f32) -> Self {
+        self.lambda = lambda.clamp(0.0, 1.0);
         self
     }
 
@@ -357,6 +364,15 @@ mod tests {
         assert_eq!(result[0].0, "a");
         assert_eq!(result[1].0, "b");
         assert_eq!(result[2].0, "c");
+    }
+
+    #[test]
+    fn mmr_config_clamps_lambda() {
+        assert_eq!(MmrConfig::new(-0.5, 10).lambda, 0.0);
+        assert_eq!(MmrConfig::new(1.5, 10).lambda, 1.0);
+        assert_eq!(MmrConfig::default().with_lambda(-0.5).lambda, 0.0);
+        assert_eq!(MmrConfig::default().with_lambda(1.5).lambda, 1.0);
+        assert_eq!(MmrConfig::default().with_lambda(0.7).lambda, 0.7);
     }
 
     #[test]
