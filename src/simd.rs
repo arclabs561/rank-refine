@@ -1050,7 +1050,11 @@ mod tests {
         let above_threshold = [1e-8, 0.0, 0.0]; // norm = 1e-8 > 1e-9
         let result = cosine(&above_threshold, &nonzero);
         // Should be ~1.0 (parallel vectors)
-        assert!((result - 1.0).abs() < 0.1, "Above threshold should compute: {}", result);
+        assert!(
+            (result - 1.0).abs() < 0.1,
+            "Above threshold should compute: {}",
+            result
+        );
     }
 
     #[test]
@@ -1059,7 +1063,11 @@ mod tests {
         let query = vec![vec![1.0, 0.0, 0.0]];
         let doc = vec![vec![0.0, 1.0, 0.0]]; // Orthogonal
         let score = maxsim_cosine_vecs(&query, &doc);
-        assert!(score.abs() < 0.01, "Orthogonal vectors should have ~0 cosine, got {}", score);
+        assert!(
+            score.abs() < 0.01,
+            "Orthogonal vectors should have ~0 cosine, got {}",
+            score
+        );
     }
 
     #[test]
@@ -1073,8 +1081,12 @@ mod tests {
         let vec_score = maxsim_cosine_vecs(&query, &doc);
         let slice_score = maxsim_cosine(&q_refs, &d_refs);
 
-        assert!((vec_score - slice_score).abs() < 1e-5,
-            "Vec and slice versions should match: {} vs {}", vec_score, slice_score);
+        assert!(
+            (vec_score - slice_score).abs() < 1e-5,
+            "Vec and slice versions should match: {} vs {}",
+            vec_score,
+            slice_score
+        );
     }
 
     #[test]
@@ -1096,7 +1108,11 @@ mod tests {
 
         let result = dot(&short_a, &short_b);
         // Manual: 0*1 + 1*2 + 2*3 + 3*4 + 4*5 + 5*6 + 6*7 + 7*8 = 2+6+12+20+30+42+56 = 168
-        assert!((result - 168.0).abs() < 1e-3, "Short vector dot: {} != 168", result);
+        assert!(
+            (result - 168.0).abs() < 1e-3,
+            "Short vector dot: {} != 168",
+            result
+        );
     }
 
     #[test]
@@ -1107,7 +1123,11 @@ mod tests {
 
         let result = dot(&a, &b);
         // Sum of 0..15 = (15*16)/2 = 120
-        assert!((result - 120.0).abs() < 1e-3, "MIN_DIM dot: {} != 120", result);
+        assert!(
+            (result - 120.0).abs() < 1e-3,
+            "MIN_DIM dot: {} != 120",
+            result
+        );
     }
 
     #[test]
@@ -1118,7 +1138,11 @@ mod tests {
 
         let result = dot(&a, &b);
         // Only uses first 3: 1+2+3 = 6
-        assert!((result - 6.0).abs() < 1e-5, "Mismatched len dot: {} != 6", result);
+        assert!(
+            (result - 6.0).abs() < 1e-5,
+            "Mismatched len dot: {} != 6",
+            result
+        );
     }
 }
 

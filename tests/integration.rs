@@ -457,10 +457,7 @@ fn e2e_clustering_pooling() {
     let pooled = colbert::pool_tokens(&tokens, 2);
 
     // Verify reduction
-    assert!(
-        pooled.len() <= original_count,
-        "Should reduce token count"
-    );
+    assert!(pooled.len() <= original_count, "Should reduce token count");
 
     // Dimension preserved
     for token in &pooled {
@@ -602,13 +599,21 @@ fn e2e_score_normalization_pipeline() {
     // Normalize to [0, 1] for thresholds
     let normalized = simd::normalize_maxsim_batch(&raw_scores, 32);
     for &s in &normalized {
-        assert!(s >= 0.0 && s <= 2.0, "Normalized score {} should be in reasonable range", s);
+        assert!(
+            s >= 0.0 && s <= 2.0,
+            "Normalized score {} should be in reasonable range",
+            s
+        );
     }
 
     // Softmax for relative comparison
     let softmax = simd::softmax_scores(&raw_scores);
     let sum: f32 = softmax.iter().sum();
-    assert!((sum - 1.0).abs() < 1e-5, "Softmax should sum to 1, got {}", sum);
+    assert!(
+        (sum - 1.0).abs() < 1e-5,
+        "Softmax should sum to 1, got {}",
+        sum
+    );
 
     // Top-k selection
     let top2 = simd::top_k_indices(&raw_scores, 2);
@@ -621,7 +626,10 @@ fn e2e_score_normalization_pipeline() {
                 assert!(
                     raw_scores[idx] >= other_score,
                     "Top-k index {} (score {}) should have score >= {} (idx {})",
-                    idx, raw_scores[idx], other_score, other_idx
+                    idx,
+                    raw_scores[idx],
+                    other_score,
+                    other_idx
                 );
             }
         }
@@ -644,10 +652,10 @@ fn e2e_weighted_maxsim_pipeline() {
     let weights = vec![2.0, 1.5, 1.0];
 
     let documents = vec![
-        mock_token_embed("important systems", DIM),      // Has "important"
-        mock_token_embed("critical analysis", DIM),      // Has "critical"
-        mock_token_embed("keyword search", DIM),         // Has "keyword"
-        mock_token_embed("unrelated text", DIM),         // No match
+        mock_token_embed("important systems", DIM), // Has "important"
+        mock_token_embed("critical analysis", DIM), // Has "critical"
+        mock_token_embed("keyword search", DIM),    // Has "keyword"
+        mock_token_embed("unrelated text", DIM),    // No match
     ];
 
     // Score with weights
@@ -674,7 +682,10 @@ fn e2e_weighted_maxsim_pipeline() {
 
     // Document with "important" should benefit more from high weight
     // (This is a softer assertion since mock embeddings are deterministic)
-    assert!(weighted_scores[0] > 0.0, "Document with important term should have positive score");
+    assert!(
+        weighted_scores[0] > 0.0,
+        "Document with important term should have positive score"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -692,7 +703,10 @@ fn e2e_rag_rerank_pipeline() {
 
     // Retrieved chunks (simulating retrieval results)
     let chunks = vec![
-        (1, "Rust uses ownership and borrowing to ensure memory safety"),
+        (
+            1,
+            "Rust uses ownership and borrowing to ensure memory safety",
+        ),
         (2, "Python is a dynamically typed language"),
         (3, "Memory safety in Rust is enforced at compile time"),
         (4, "JavaScript runs in web browsers"),
@@ -730,7 +744,11 @@ fn e2e_rag_rerank_pipeline() {
     let blended: Vec<(i32, f32)> = colbert_candidates
         .iter()
         .map(|(id, colbert_score)| {
-            let dense_score = dense_candidates.iter().find(|(did, _)| did == id).unwrap().1;
+            let dense_score = dense_candidates
+                .iter()
+                .find(|(did, _)| did == id)
+                .unwrap()
+                .1;
             let final_score = blend(dense_score, *colbert_score, 0.7);
             (*id, final_score)
         })
@@ -746,7 +764,11 @@ fn e2e_rag_rerank_pipeline() {
     let scores: Vec<f32> = blended.iter().map(|(_, s)| *s).collect();
     let normalized = normalize_scores(&scores);
     for &s in &normalized {
-        assert!(s >= 0.0 && s <= 1.0, "Normalized score {} should be in [0, 1]", s);
+        assert!(
+            s >= 0.0 && s <= 1.0,
+            "Normalized score {} should be in [0, 1]",
+            s
+        );
     }
 }
 
@@ -789,7 +811,10 @@ fn e2e_matryoshka_normalization() {
         .map(|((id, score), _)| (*id, *score))
         .collect();
 
-    assert!(!above_threshold.is_empty(), "Should have some results above threshold");
+    assert!(
+        !above_threshold.is_empty(),
+        "Should have some results above threshold"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -813,13 +838,19 @@ fn e2e_nan_handling() {
     // Softmax should handle NaN gracefully (produces 0 for NaN inputs)
     let softmax = simd::softmax_scores(&scores_with_nan);
     let finite_sum: f32 = softmax.iter().filter(|s| s.is_finite()).sum();
-    assert!(finite_sum > 0.0, "Softmax should produce some positive values");
+    assert!(
+        finite_sum > 0.0,
+        "Softmax should produce some positive values"
+    );
 
     // Top-k should place NaN last
     let top3 = simd::top_k_indices(&scores_with_nan, 3);
     // First 3 should be non-NaN indices (0, 2, 4)
     for &idx in &top3 {
-        assert!(!scores_with_nan[idx].is_nan(), "Top-k should prefer non-NaN values");
+        assert!(
+            !scores_with_nan[idx].is_nan(),
+            "Top-k should prefer non-NaN values"
+        );
     }
 }
 
@@ -848,7 +879,8 @@ fn e2e_batch_operations() {
         let individual = simd::maxsim_vecs(&query, doc);
         assert!(
             (batch_scores[i] - individual).abs() < 1e-5,
-            "Batch and individual scores should match for doc {}", i
+            "Batch and individual scores should match for doc {}",
+            i
         );
     }
 

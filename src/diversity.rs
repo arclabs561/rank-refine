@@ -670,7 +670,10 @@ mod tests {
         let result = mmr(&candidates, &sim, MmrConfig::new(0.7, 1));
 
         // b has highest relevance (1.0), should be selected first
-        assert_eq!(result[0].0, "b", "First selection should be highest relevance");
+        assert_eq!(
+            result[0].0, "b",
+            "First selection should be highest relevance"
+        );
     }
 
     /// Verify MMR formula for second selection
@@ -700,7 +703,10 @@ mod tests {
         let result = mmr(&candidates, &sim, MmrConfig::new(0.5, 2));
 
         assert_eq!(result[0].0, "a", "First should be 'a' (highest relevance)");
-        assert_eq!(result[1].0, "c", "Second should be 'c' (more diverse from 'a')");
+        assert_eq!(
+            result[1].0, "c",
+            "Second should be 'c' (more diverse from 'a')"
+        );
     }
 
     /// Verify that equal relevance with λ=0 selects based on diversity only
@@ -997,7 +1003,7 @@ mod dpp_tests {
         let result = dpp(&candidates, &embeddings, DppConfig::default().with_k(2));
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].0, "a"); // Highest quality
-        // Second should be c (orthogonal) not b (similar)
+                                      // Second should be c (orthogonal) not b (similar)
         assert_eq!(result[1].0, "c");
     }
 

@@ -13,11 +13,27 @@ use rank_refine::scoring::DenseScorer;
 fn main() {
     // Simulated qdrant results (id, embedding, initial_score)
     let retrieved: Vec<(&str, Vec<f32>, f32)> = vec![
-        ("chunk_1", mock_embed("Rust ownership and borrowing rules"), 0.89),
-        ("chunk_2", mock_embed("Memory safety without garbage collection"), 0.87),
+        (
+            "chunk_1",
+            mock_embed("Rust ownership and borrowing rules"),
+            0.89,
+        ),
+        (
+            "chunk_2",
+            mock_embed("Memory safety without garbage collection"),
+            0.87,
+        ),
         ("chunk_3", mock_embed("Python list comprehensions"), 0.85),
-        ("chunk_4", mock_embed("Rust lifetimes ensure references are valid"), 0.84),
-        ("chunk_5", mock_embed("JavaScript async await patterns"), 0.82),
+        (
+            "chunk_4",
+            mock_embed("Rust lifetimes ensure references are valid"),
+            0.84,
+        ),
+        (
+            "chunk_5",
+            mock_embed("JavaScript async await patterns"),
+            0.82,
+        ),
     ];
 
     let query_emb = mock_embed("How does Rust handle memory safety?");
@@ -33,8 +49,14 @@ fn main() {
     reranked.sort_by(|a, b| b.1.total_cmp(&a.1));
 
     println!("Query: \"How does Rust handle memory safety?\"\n");
-    println!("Before: {:?}", retrieved.iter().map(|(id, _, _)| *id).collect::<Vec<_>>());
-    println!("After:  {:?}", reranked.iter().map(|(id, _)| *id).collect::<Vec<_>>());
+    println!(
+        "Before: {:?}",
+        retrieved.iter().map(|(id, _, _)| *id).collect::<Vec<_>>()
+    );
+    println!(
+        "After:  {:?}",
+        reranked.iter().map(|(id, _)| *id).collect::<Vec<_>>()
+    );
 
     // Take top-k for LLM context
     let context_chunks: Vec<_> = reranked.iter().take(3).collect();

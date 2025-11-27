@@ -17,19 +17,19 @@ fn main() {
     // Candidates: (id, relevance_score)
     let candidates = vec![
         ("doc_a", 0.95),
-        ("doc_b", 0.90),  // similar to doc_a
+        ("doc_b", 0.90), // similar to doc_a
         ("doc_c", 0.85),
-        ("doc_d", 0.80),  // similar to doc_c
-        ("doc_e", 0.75),  // unique
+        ("doc_d", 0.80), // similar to doc_c
+        ("doc_e", 0.75), // unique
     ];
 
     // Embeddings for similarity computation
     let embeddings: Vec<Vec<f32>> = vec![
-        vec![1.0, 0.0, 0.0],  // doc_a
-        vec![0.9, 0.1, 0.0],  // doc_b: similar to a
-        vec![0.0, 1.0, 0.0],  // doc_c
-        vec![0.1, 0.9, 0.0],  // doc_d: similar to c
-        vec![0.0, 0.0, 1.0],  // doc_e: unique direction
+        vec![1.0, 0.0, 0.0], // doc_a
+        vec![0.9, 0.1, 0.0], // doc_b: similar to a
+        vec![0.0, 1.0, 0.0], // doc_c
+        vec![0.1, 0.9, 0.0], // doc_d: similar to c
+        vec![0.0, 0.0, 1.0], // doc_e: unique direction
     ];
 
     // Build similarity matrix

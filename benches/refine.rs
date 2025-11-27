@@ -204,7 +204,8 @@ fn bench_mmr(c: &mut Criterion) {
 
     for &n in &[50, 100, 200] {
         // Generate candidates with scores
-        let candidates: Vec<(usize, f32)> = (0..n).map(|i| (i, 1.0 - i as f32 / n as f32)).collect();
+        let candidates: Vec<(usize, f32)> =
+            (0..n).map(|i| (i, 1.0 - i as f32 / n as f32)).collect();
 
         // Generate similarity matrix (flattened, row-major)
         let sim: Vec<f32> = (0..n)

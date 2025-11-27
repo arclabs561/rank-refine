@@ -47,14 +47,24 @@ fn main() {
 
     println!("\nMaxSim scores:");
     println!("  Original:   {:.4}", score_orig);
-    println!("  Clustered:  {:.4} ({:+.1}%)", score_cluster, (score_cluster / score_orig - 1.0) * 100.0);
-    println!("  Sequential: {:.4} ({:+.1}%)", score_seq, (score_seq / score_orig - 1.0) * 100.0);
+    println!(
+        "  Clustered:  {:.4} ({:+.1}%)",
+        score_cluster,
+        (score_cluster / score_orig - 1.0) * 100.0
+    );
+    println!(
+        "  Sequential: {:.4} ({:+.1}%)",
+        score_seq,
+        (score_seq / score_orig - 1.0) * 100.0
+    );
 
     // Storage savings
     let bytes_orig = doc_tokens.len() * 128 * 4;
     let bytes_pooled = pooled_cluster.len() * 128 * 4;
-    println!("\nStorage: {}KB → {}KB ({:.0}% reduction)",
-        bytes_orig / 1024, bytes_pooled / 1024,
-        (1.0 - bytes_pooled as f64 / bytes_orig as f64) * 100.0);
+    println!(
+        "\nStorage: {}KB → {}KB ({:.0}% reduction)",
+        bytes_orig / 1024,
+        bytes_pooled / 1024,
+        (1.0 - bytes_pooled as f64 / bytes_orig as f64) * 100.0
+    );
 }
-
