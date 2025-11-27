@@ -72,8 +72,6 @@ pub enum RefineError {
         /// The query length (must be > head_dims).
         query_len: usize,
     },
-    /// Cannot score an empty query.
-    EmptyQuery,
     /// Vector dimensions must match.
     DimensionMismatch {
         /// Expected dimension.
@@ -93,7 +91,6 @@ impl std::fmt::Display for RefineError {
                 f,
                 "invalid head_dims: {head_dims} >= query length {query_len}"
             ),
-            Self::EmptyQuery => write!(f, "empty query"),
             Self::DimensionMismatch { expected, got } => {
                 write!(f, "expected {expected} dimensions, got {got}")
             }
