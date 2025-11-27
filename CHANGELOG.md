@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.34] - 2025-11-27
+
+### Added
+- DPP benchmark (`bench_dpp`) complements existing MMR benchmark
+
+### Changed
+- SIMD safety comments now explicitly note unaligned load operations
+- `NORM_EPSILON` constant documented with rationale (1e-9 vs f32::EPSILON)
+
+### Removed
+- Unused `EmptyQuery` error variant (was defined but never returned)
+
+### Fixed
+- Private doc link in `cosine` function documentation
+
 ## [0.7.33] - 2025-11-27
 
 ### Fixed
