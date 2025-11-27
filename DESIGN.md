@@ -13,7 +13,20 @@ Why minimal: SIMD is hand-written. No linear algebra crate needed.
 
 ## Problem Space
 
-Two distinct problems, both requiring document content (embeddings):
+Two distinct problems:
+
+```mermaid
+flowchart LR
+    subgraph Scoring["Scoring: f(q, d) → ℝ"]
+        simd["simd"]
+        colbert["colbert"]
+        matryoshka["matryoshka"]
+        cross["crossencoder"]
+    end
+    subgraph Selection["Selection: f(S) → ℝ"]
+        diversity["diversity"]
+    end
+```
 
 | Problem | Function | Module |
 |---------|----------|--------|

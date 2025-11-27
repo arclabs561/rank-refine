@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.7.22] - 2025-11-27
+
+### Changed
+- **REFERENCE.md**: Mermaid diagrams, LaTeX math for GitHub rendering
+- **DESIGN.md**: Mermaid architecture diagram
+
 ## [0.7.21] - 2025-11-27
 
 ### Added
