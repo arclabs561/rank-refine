@@ -43,7 +43,7 @@ pub mod simd;
 /// ```
 pub mod prelude {
     // Core SIMD functions
-    pub use crate::simd::{cosine, dot, maxsim, norm};
+    pub use crate::simd::{cosine, cosine_truncating, dot, dot_truncating, maxsim, norm};
 
     // Score utilities
     pub use crate::simd::{normalize_maxsim, softmax_scores, top_k_indices};

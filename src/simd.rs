@@ -23,16 +23,23 @@ const MIN_DIM_SIMD: usize = 16;
 
 /// Dot product of two vectors.
 ///
-/// If vectors have different lengths, uses the shorter length.
 /// Returns 0.0 for empty vectors.
 ///
-/// # Note
+/// # Debug Assertions
 ///
-/// Mismatched lengths are silently handled by truncating to the shorter.
-/// If you need exact dimension matching, check lengths first.
+/// In debug builds, panics if vector lengths differ. In release builds,
+/// mismatched lengths silently use the shorter length (for performance).
+/// Use [`dot_truncating`] if you intentionally want truncation behavior.
 #[inline]
 #[must_use]
 pub fn dot(a: &[f32], b: &[f32]) -> f32 {
+    debug_assert_eq!(
+        a.len(),
+        b.len(),
+        "dot: dimension mismatch ({} vs {}). Use dot_truncating for intentional truncation.",
+        a.len(),
+        b.len()
+    );
     let n = a.len().min(b.len());
 
     #[cfg(target_arch = "x86_64")]
@@ -449,6 +456,69 @@ pub fn top_k_indices(scores: &[f32], k: usize) -> Vec<usize> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Truncating variants (explicit mismatched-length handling)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Dot product with explicit truncation for mismatched lengths.
+///
+/// Uses the shorter of the two vectors. Prefer [`dot`] when dimensions
+/// should match; use this when intentionally comparing prefix dimensions
+/// (e.g., Matryoshka embeddings).
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::simd::dot_truncating;
+///
+/// // Compare only first 64 dims of a 768-dim embedding
+/// let full = vec![1.0; 768];
+/// let prefix = vec![1.0; 64];
+/// let score = dot_truncating(&full, &prefix); // Uses 64 dims
+/// ```
+#[inline]
+#[must_use]
+pub fn dot_truncating(a: &[f32], b: &[f32]) -> f32 {
+    let n = a.len().min(b.len());
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        if n >= MIN_DIM_SIMD && is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma")
+        {
+            // SAFETY: AVX2/FMA verified, truncation intentional
+            return unsafe { dot_avx2(&a[..n], &b[..n]) };
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        if n >= MIN_DIM_SIMD {
+            // SAFETY: NEON always available, truncation intentional
+            return unsafe { dot_neon(&a[..n], &b[..n]) };
+        }
+    }
+    #[allow(unreachable_code)]
+    dot_portable(&a[..n], &b[..n])
+}
+
+/// Cosine similarity with explicit truncation for mismatched lengths.
+///
+/// See [`dot_truncating`] for when to use this vs [`cosine`].
+#[inline]
+#[must_use]
+pub fn cosine_truncating(a: &[f32], b: &[f32]) -> f32 {
+    let n = a.len().min(b.len());
+    let a = &a[..n];
+    let b = &b[..n];
+    let d = dot_truncating(a, b);
+    let na = dot_truncating(a, a).sqrt();
+    let nb = dot_truncating(b, b).sqrt();
+    if na > 1e-9 && nb > 1e-9 {
+        d / (na * nb)
+    } else {
+        0.0
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Portable fallback
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -570,14 +640,19 @@ mod tests {
     #[test]
     fn test_dot_empty() {
         assert_eq!(dot(&[], &[]), 0.0);
-        assert_eq!(dot(&[1.0], &[]), 0.0);
-        assert_eq!(dot(&[], &[1.0]), 0.0);
     }
 
     #[test]
-    fn test_dot_mismatched_lengths() {
-        // Should use shorter length
-        assert!((dot(&[1.0, 2.0, 3.0], &[4.0, 5.0]) - 14.0).abs() < 1e-5); // 1*4 + 2*5 = 14
+    fn test_dot_truncating_empty() {
+        assert_eq!(dot_truncating(&[], &[]), 0.0);
+        assert_eq!(dot_truncating(&[1.0], &[]), 0.0);
+        assert_eq!(dot_truncating(&[], &[1.0]), 0.0);
+    }
+
+    #[test]
+    fn test_dot_truncating_mismatched() {
+        // dot_truncating intentionally truncates to shorter length
+        assert!((dot_truncating(&[1.0, 2.0, 3.0], &[4.0, 5.0]) - 14.0).abs() < 1e-5); // 1*4 + 2*5 = 14
     }
 
     #[test]
@@ -1131,18 +1206,28 @@ mod tests {
     }
 
     #[test]
-    fn dot_mismatched_lengths() {
-        // Should use min(len_a, len_b)
+    fn dot_truncating_mismatched_lengths() {
+        // dot_truncating uses min(len_a, len_b)
         let a = [1.0, 2.0, 3.0, 4.0, 5.0];
         let b = [1.0, 1.0, 1.0];
 
-        let result = dot(&a, &b);
+        let result = dot_truncating(&a, &b);
         // Only uses first 3: 1+2+3 = 6
         assert!(
             (result - 6.0).abs() < 1e-5,
-            "Mismatched len dot: {} != 6",
+            "Mismatched len dot_truncating: {} != 6",
             result
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "dimension mismatch")]
+    #[cfg(debug_assertions)]
+    fn dot_panics_on_mismatch_in_debug() {
+        // In debug builds, dot() should panic on mismatched dimensions
+        let a = [1.0, 2.0, 3.0, 4.0, 5.0];
+        let b = [1.0, 1.0, 1.0];
+        let _ = dot(&a, &b);
     }
 }
 

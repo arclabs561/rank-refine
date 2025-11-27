@@ -1018,3 +1018,165 @@ mod dpp_tests {
         assert_eq!(config.alpha, 0.0);
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Failure Mode Tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod failure_mode_tests {
+    use super::*;
+
+    /// MMR with negative similarity values (anti-correlated embeddings).
+    /// Negative similarity should boost diversity score, not cause issues.
+    #[test]
+    fn mmr_negative_similarity_handled() {
+        let candidates = vec![("a", 0.9), ("b", 0.85), ("c", 0.8)];
+        // Negative similarity between a-b means they're anti-correlated
+        let sim = vec![
+            1.0, -0.9, 0.5, // a: anti-correlated with b
+            -0.9, 1.0, 0.5, // b: anti-correlated with a
+            0.5, 0.5, 1.0,  // c: somewhat similar to both
+        ];
+
+        let result = mmr(&candidates, &sim, MmrConfig::new(0.5, 2));
+        assert_eq!(result.len(), 2);
+        // After selecting 'a', 'b' should be preferred since sim(a,b)=-0.9
+        // gives MMR(b) = 0.5*rel(b) - 0.5*(-0.9) = 0.5*rel(b) + 0.45 (bonus!)
+        assert_eq!(result[0].0, "a");
+        assert_eq!(result[1].0, "b"); // Negative similarity = diversity boost
+    }
+
+    /// MMR with similarity outside [0, 1] range.
+    /// The algorithm should still work correctly.
+    #[test]
+    fn mmr_similarity_outside_unit_range() {
+        let candidates = vec![("a", 0.9), ("b", 0.85)];
+        // Similarity > 1 (invalid but shouldn't crash)
+        let sim = vec![
+            1.0, 2.0, // a-b has sim=2.0 (impossible for cosine, but tests robustness)
+            2.0, 1.0,
+        ];
+
+        let result = mmr(&candidates, &sim, MmrConfig::new(0.5, 2));
+        assert_eq!(result.len(), 2);
+        // Should still select both, just with weird scores
+    }
+
+    /// DPP with zero-norm embeddings.
+    /// Should handle gracefully (c[i] = 0).
+    #[test]
+    fn dpp_zero_norm_embeddings() {
+        let candidates = vec![("a", 0.9), ("b", 0.85)];
+        let embeddings = vec![
+            vec![0.0, 0.0, 0.0], // Zero vector
+            vec![1.0, 0.0, 0.0], // Normal vector
+        ];
+
+        // Should not panic despite zero-norm
+        let result = dpp(&candidates, &embeddings, DppConfig::default().with_k(2));
+        // At least one item should be selected (the non-zero one)
+        assert!(!result.is_empty());
+    }
+
+    /// DPP with all identical embeddings.
+    /// After first selection, c[i] → 0 for all remaining.
+    #[test]
+    fn dpp_all_identical_embeddings() {
+        let candidates = vec![("a", 0.9), ("b", 0.85), ("c", 0.8)];
+        let embeddings = vec![
+            vec![1.0, 0.0, 0.0],
+            vec![1.0, 0.0, 0.0], // Identical to a
+            vec![1.0, 0.0, 0.0], // Identical to a
+        ];
+
+        // Should not panic
+        let result = dpp(&candidates, &embeddings, DppConfig::default().with_k(3));
+        // First item selected, rest have c → 0, so quality dominates
+        assert!(!result.is_empty());
+    }
+
+    /// MMR cosine with zero-norm embeddings.
+    /// Cosine returns 0 for zero vectors.
+    #[test]
+    fn mmr_cosine_zero_norm_embeddings() {
+        let candidates = vec![("a", 0.9), ("b", 0.85)];
+        let embeddings = vec![
+            vec![0.0, 0.0], // Zero vector
+            vec![1.0, 0.0], // Normal vector
+        ];
+
+        let result = mmr_cosine(&candidates, &embeddings, MmrConfig::new(0.5, 2));
+        assert_eq!(result.len(), 2);
+    }
+
+    /// DPP with anti-correlated embeddings (negative dot products).
+    #[test]
+    fn dpp_anticorrelated_embeddings() {
+        let candidates = vec![("a", 0.9), ("b", 0.85)];
+        let embeddings = vec![
+            vec![1.0, 0.0],
+            vec![-1.0, 0.0], // Opposite direction
+        ];
+
+        // Orthogonal in diversity terms (should both be selected)
+        let result = dpp(&candidates, &embeddings, DppConfig::default().with_k(2));
+        assert_eq!(result.len(), 2);
+    }
+
+    /// MMR with NaN in similarity matrix.
+    /// NaN propagates to scores, but shouldn't crash.
+    #[test]
+    fn mmr_nan_in_similarity() {
+        let candidates = vec![("a", 0.9), ("b", 0.85)];
+        let sim = vec![
+            1.0,
+            f32::NAN,
+            f32::NAN,
+            1.0,
+        ];
+
+        // Should not panic (NaN comparison returns false)
+        let result = mmr(&candidates, &sim, MmrConfig::new(0.5, 2));
+        // At least some selection happens
+        assert!(!result.is_empty());
+    }
+
+    /// DPP with NaN in embeddings.
+    #[test]
+    fn dpp_nan_in_embeddings() {
+        let candidates = vec![("a", 0.9), ("b", 0.85)];
+        let embeddings = vec![
+            vec![1.0, 0.0],
+            vec![f32::NAN, 0.0],
+        ];
+
+        // Should not panic
+        let result = dpp(&candidates, &embeddings, DppConfig::default().with_k(2));
+        // First item (non-NaN) should be selected
+        assert!(!result.is_empty());
+    }
+
+    /// MMR preserves original scores in output.
+    #[test]
+    fn mmr_preserves_original_scores() {
+        let candidates = vec![("a", 0.95), ("b", 0.85), ("c", 0.75)];
+        let sim = vec![
+            1.0, 0.1, 0.1,
+            0.1, 1.0, 0.1,
+            0.1, 0.1, 1.0,
+        ];
+
+        let result = mmr(&candidates, &sim, MmrConfig::new(0.5, 3));
+        
+        // Output should have original scores, not normalized MMR scores
+        for (id, score) in &result {
+            let original = candidates.iter().find(|(i, _)| i == id).unwrap().1;
+            assert!(
+                (score - original).abs() < 1e-6,
+                "Score for {} was modified: {} vs {}",
+                id, score, original
+            );
+        }
+    }
+}

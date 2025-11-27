@@ -178,9 +178,10 @@ Hand-written intrinsics, auto-dispatch at runtime:
 | Platform | Features | Vectors |
 |----------|----------|---------|
 | x86_64 | AVX2 + FMA | 256-bit (8 floats) |
-| x86_64 | SSE4.1 | 128-bit (4 floats) |
 | aarch64 | NEON | 128-bit (4 floats) |
 | other | — | Scalar |
+
+Older x86_64 CPUs without AVX2 fall back to scalar. SSE4.1 could be added but most CPUs from 2013+ have AVX2.
 
 **Threshold:** SIMD only for dimension ≥ 16. Below that, loop overhead exceeds benefit.
 

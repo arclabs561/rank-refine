@@ -130,6 +130,7 @@ impl MaskedTokens {
     /// # Panics
     ///
     /// Panics if `tokens.len() != mask.len()`.
+    #[must_use]
     pub fn new(tokens: Vec<Vec<f32>>, mask: Vec<bool>) -> Self {
         assert_eq!(
             tokens.len(),
@@ -142,6 +143,7 @@ impl MaskedTokens {
     }
 
     /// Create from tokens without any masking (all valid).
+    #[must_use]
     pub fn from_tokens(tokens: Vec<Vec<f32>>) -> Self {
         let mask = vec![true; tokens.len()];
         Self { tokens, mask }
@@ -177,11 +179,13 @@ impl MaskedTokens {
     }
 
     /// Access all tokens (including padding).
+    #[must_use]
     pub fn all_tokens(&self) -> &[Vec<f32>] {
         &self.tokens
     }
 
     /// Access mask.
+    #[must_use]
     pub fn mask(&self) -> &[bool] {
         &self.mask
     }
@@ -300,12 +304,15 @@ mod proptests {
             }
         }
 
-        /// Normalized dot is symmetric
+        /// Normalized dot is symmetric (same dimensions required)
         #[test]
         fn normalized_dot_symmetric(
-            a in proptest::collection::vec(-10.0f32..10.0, 4..8),
-            b in proptest::collection::vec(-10.0f32..10.0, 4..8)
+            dim in 4usize..8,
+            a_vals in proptest::collection::vec(-10.0f32..10.0, 8),
+            b_vals in proptest::collection::vec(-10.0f32..10.0, 8)
         ) {
+            let a: Vec<f32> = a_vals.into_iter().take(dim).collect();
+            let b: Vec<f32> = b_vals.into_iter().take(dim).collect();
             if let (Some(na), Some(nb)) = (normalize(&a), normalize(&b)) {
                 let ab = na.dot(&nb);
                 let ba = nb.dot(&na);
@@ -313,12 +320,15 @@ mod proptests {
             }
         }
 
-        /// Normalized cosine bounded [-1, 1]
+        /// Normalized cosine bounded [-1, 1] (same dimensions required)
         #[test]
         fn normalized_cosine_bounded(
-            a in proptest::collection::vec(-10.0f32..10.0, 4..8),
-            b in proptest::collection::vec(-10.0f32..10.0, 4..8)
+            dim in 4usize..8,
+            a_vals in proptest::collection::vec(-10.0f32..10.0, 8),
+            b_vals in proptest::collection::vec(-10.0f32..10.0, 8)
         ) {
+            let a: Vec<f32> = a_vals.into_iter().take(dim).collect();
+            let b: Vec<f32> = b_vals.into_iter().take(dim).collect();
             if let (Some(na), Some(nb)) = (normalize(&a), normalize(&b)) {
                 let cos = na.cosine(&nb);
                 prop_assert!(cos >= -1.01 && cos <= 1.01, "Cosine was {}", cos);

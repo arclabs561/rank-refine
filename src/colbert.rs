@@ -525,8 +525,15 @@ pub fn refine_with_config<I: Clone + Eq + std::hash::Hash>(
 ///
 /// `TokenIndex` provides:
 /// 1. **Ergonomic API**: `score_all`, `top_k`, `get` methods
-/// 2. **O(1) lookup by ID** via internal HashMap
-/// 3. **Clear intent**: "This is a pre-computed index, not ephemeral data"
+/// 2. **Clear intent**: "This is a pre-computed index, not ephemeral data"
+///
+/// # Complexity
+///
+/// - `score_all`, `rank`, `top_k`: O(n) where n = number of entries
+/// - `get`, `contains`: O(n) linear scan
+///
+/// For O(1) lookups by ID, maintain a separate `HashMap<I, usize>` mapping IDs
+/// to indices, then use `entries()[idx]`.
 ///
 /// # Example
 ///
@@ -556,6 +563,7 @@ pub struct TokenIndex<I> {
 
 impl<I> TokenIndex<I> {
     /// Create a new token index from (id, tokens) pairs.
+    #[must_use]
     pub fn new(entries: Vec<(I, Vec<Vec<f32>>)>) -> Self {
         Self { entries }
     }
