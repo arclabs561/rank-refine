@@ -135,7 +135,6 @@ pub fn mmr<I: Clone>(
 }
 
 /// Fallible version of [`mmr`]. Returns `Err` if similarity matrix is wrong size.
-#[must_use]
 pub fn try_mmr<I: Clone>(
     candidates: &[(I, f32)],
     similarity: &[f32],
@@ -435,15 +434,6 @@ mod tests {
 mod proptests {
     use super::*;
     use proptest::prelude::*;
-
-    fn arb_candidates(max_len: usize) -> impl Strategy<Value = Vec<(u32, f32)>> {
-        proptest::collection::vec((0u32..100, 0.0f32..1.0), 0..max_len)
-    }
-
-    fn arb_similarity_matrix(n: usize) -> impl Strategy<Value = Vec<f32>> {
-        // Generate a valid n×n similarity matrix
-        proptest::collection::vec(0.0f32..1.0, n * n)
-    }
 
     proptest! {
         /// MMR output length bounded by min(k, n)
