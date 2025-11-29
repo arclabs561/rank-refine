@@ -10,6 +10,21 @@ SIMD-accelerated similarity scoring for vector search and RAG.
 cargo add rank-refine
 ```
 
+## Why Late Interaction?
+
+Traditional dense retrieval compresses an entire document into a single vector. This works well for broad topic matching, but loses fine-grained alignment. 
+
+**The Problem**: Searching for "capital of France" might match a document about "France's economic capital" with high overall similarity, even if it never mentions "capital" in the geographic sense.
+
+**Late Interaction Solution**: Keep one vector per token and match at query time. Each query token finds its best-matching document token, then sum those matches.
+
+```
+Dense:           "the quick brown fox" → [0.1, 0.2, ...]  (1 vector)
+Late Interaction: "the quick brown fox" → [[...], [...], [...], [...]]  (4 vectors)
+```
+
+This preserves token-level semantics that single-vector embeddings lose, enabling precise reranking.
+
 ## What This Is
 
 Scoring primitives for retrieval systems:
@@ -33,6 +48,32 @@ let score = cosine(&query_embedding, &doc_embedding);
 
 // Late interaction (ColBERT)
 let score = maxsim_vecs(&query_tokens, &doc_tokens);
+```
+
+### Realistic Example
+
+```rust
+use rank_refine::colbert;
+
+// Query: "capital of France" (32 tokens, 128-dim embeddings)
+let query = vec![
+    vec![0.12, -0.45, 0.89, ...],  // "capital" token
+    vec![0.34, 0.67, -0.23, ...],  // "of" token
+    vec![0.78, -0.12, 0.45, ...],  // "France" token
+    // ... 29 more tokens
+];
+
+// Document: "Paris is the capital of France" (100 tokens)
+let doc = vec![
+    vec![0.11, -0.44, 0.90, ...],  // "Paris" token
+    vec![0.35, 0.66, -0.24, ...],  // "is" token
+    // ... 98 more tokens
+];
+
+// MaxSim finds best matches for each query token
+let score = colbert::maxsim_vecs(&query, &doc);
+// "capital" matches "capital" (0.95), "France" matches "France" (0.92)
+// Score = 0.95 + 0.92 + ... (sum of best matches per query token)
 ```
 
 ## API
@@ -81,25 +122,83 @@ For each query token, find its best-matching document token, then sum:
 
 $$\text{score}(Q, D) = \sum_{i} \max_{j} (q_i \cdot d_j)$$
 
-This preserves token-level semantics that single-vector embeddings lose.
+**Visual Intuition**:
+
+```
+Query tokens:     [q1]  [q2]  [q3]
+                    \    |    /
+                     \   |   /     Each query token searches
+                      v  v  v      for its best match
+Document tokens:  [d1] [d2] [d3] [d4]
+                   ↑         ↑
+                  0.9       0.8    (best matches)
+
+MaxSim = 0.9 + 0.8 + ... (sum of best matches)
+```
+
+**Example**: Query "capital of France" (2 tokens) vs document "Paris is the capital of France" (6 tokens):
+- Query token "capital" finds best match: `dot("capital", "capital") = 0.95`
+- Query token "France" finds best match: `dot("France", "France") = 0.92`
+- **MaxSim = 0.95 + 0.92 = 1.87**
+
+This captures **token-level alignment**: "capital" and "France" both have strong matches, even if they appear in different parts of the document. Single-vector embeddings would average these signals and lose precision.
+
+**When to Use**:
+- ✅ Second-stage reranking (after dense retrieval)
+- ✅ Precision-critical applications (legal, medical)
+- ✅ Queries with multiple important terms
+- ❌ First-stage retrieval (too slow for millions of docs)
+- ❌ Storage-constrained (10-100x larger than dense)
 
 ### MMR (Diversity)
 
-Balance relevance with diversity by penalizing similarity to already-selected items:
+**The Problem**: Top-k by relevance returns near-duplicates. Search "async programming" returns 10 Python asyncio tutorials instead of Python, Rust, JavaScript, and Go examples.
+
+**The Solution**: Balance relevance with diversity by penalizing similarity to already-selected items:
 
 $$\text{MMR} = \arg\max_d \left[ \lambda \cdot \text{rel}(d) - (1-\lambda) \cdot \max_{s \in S} \text{sim}(d,s) \right]$$
 
+**Lambda Parameter**:
+- `λ = 1.0`: Pure relevance (equivalent to top-k)
+- `λ = 0.5`: Balanced (common default for RAG)
+- `λ = 0.3`: Strong diversity (exploration mode)
+- `λ = 0.0`: Maximum diversity (ignore relevance)
+
+**When to Use**:
+- ✅ RAG pipelines (diverse context helps LLMs)
+- ✅ Recommendation systems (avoid redundancy)
+- ✅ Search result diversification
+- ❌ Known-item search (single correct answer)
+- ❌ When relevance is paramount
+
 ### Token Pooling
 
-Cluster similar document tokens to reduce storage:
+**The Storage Problem**: ColBERT stores ~128 vectors per document. For 10M documents with 100 tokens each:
+- Storage = 10M × 100 × 128 × 4 bytes = **512 GB**
 
-| Factor | Tokens Kept | MRR@10 Loss |
-|--------|-------------|-------------|
-| 2 | 50% | 0.1–0.3% |
-| 3 | 33% | 0.5–1.0% |
-| 4 | 25% | 1.5–3.0% |
+**The Solution**: Cluster similar document tokens and store only cluster centroids:
 
-Numbers from MS MARCO dev (Clavie et al., 2024). Pooling merges similar tokens; it hurts when queries need to distinguish between them.
+```
+Before:  [tok1] [tok2] [tok3] [tok4] [tok5] [tok6]  (6 vectors)
+         similar--^       similar------^
+After:   [mean(1,2)]  [tok3] [mean(4,5)] [tok6]    (4 vectors = 33% reduction)
+```
+
+**Why It Works**: Many tokens are redundant. Function words cluster together, as do related content words. Merging similar tokens loses little discriminative information.
+
+| Factor | Tokens Kept | MRR@10 Loss | When to Use |
+|--------|-------------|-------------|-------------|
+| 2 | 50% | 0.1–0.3% | **Default choice** |
+| 3 | 33% | 0.5–1.0% | Good tradeoff |
+| 4 | 25% | 1.5–3.0% | Storage-constrained (use `hierarchical` feature) |
+| 8+ | 12% | 5–10% | Extreme storage constraints only |
+
+Numbers from MS MARCO dev (Clavie et al., 2024). **Key insight**: Pool aggressively at index time. You can always re-score with unpooled embeddings at query time if precision matters.
+
+**When Pooling Hurts More**:
+- Long documents with many distinct concepts
+- Queries that need to distinguish between similar tokens
+- Short passages (less redundancy to exploit)
 
 ## Benchmarks
 
@@ -122,6 +221,34 @@ If you prefer not to add a dependency:
 - `src/simd.rs` is self-contained (~600 lines)
 - AVX2+FMA / NEON with portable fallback
 - No dependencies
+
+## Quick Decision Guide
+
+**What problem are you solving?**
+
+1. **Scoring embeddings** → Use `cosine` or `dot`
+   - Dense embeddings: `cosine(&query, &doc)`
+   - Pre-normalized: `dot(&query, &doc)`
+
+2. **Reranking with token-level precision** → Use `maxsim_vecs`
+   - After dense retrieval (100-1000 candidates)
+   - ColBERT-style token embeddings
+   - Precision-critical applications
+
+3. **Diversity selection** → Use `mmr_cosine` or `dpp`
+   - RAG pipelines (diverse context)
+   - Recommendation systems
+   - Search result diversification
+
+4. **Compressing token embeddings** → Use `pool_tokens`
+   - Storage-constrained deployments
+   - Factor 2-3 recommended (50-66% reduction)
+
+**When NOT to Use**:
+- ❌ First-stage retrieval over millions of docs (use dense + ANN)
+- ❌ Very short documents (<10 tokens, little benefit over dense)
+- ❌ Latency-critical first-stage (dense embeddings are faster)
+- ❌ Storage-constrained without pooling (10-100x larger than dense)
 
 See [REFERENCE.md](REFERENCE.md) for algorithm details and edge cases.
 

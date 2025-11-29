@@ -38,6 +38,16 @@ flowchart LR
 
 ## Scoring Paradigms
 
+### The Retrieval-Reranking Gap (2019)
+
+Before ColBERT, there was a frustrating dichotomy in neural IR:
+
+**Bi-encoders (dense)**: Encode query and document independently. Fast (ANN search works), but compresses everything into one vector, losing fine-grained alignment.
+
+**Cross-encoders**: Run a full transformer over concatenated query+document. Slower (can't pre-compute), but sees query-document interactions directly. About 5x better MRR@10 on MS MARCO (Nogueira & Cho, 2019).
+
+The practical gap: cross-encoders are too slow for first-stage retrieval over millions of docs, bi-encoders aren't precise enough for final ranking.
+
 ### Dense Scoring
 
 Single embedding per document. The intuition: compress all semantic meaning into one vector, then measure alignment via cosine similarity.
@@ -50,6 +60,16 @@ $$\text{score}(q, d) = \frac{q \cdot d}{\|q\| \|d\|}$$
 - Dot product: $0.8 \times 0.6 + 0.6 \times 0.8 = 0.96$
 - Norms: $\sqrt{0.8^2 + 0.6^2} = 1.0$ for both
 - Cosine: $0.96 / (1.0 \times 1.0) = 0.96$
+
+### Late Interaction: A Middle Path (2020)
+
+Khattab & Zaharia's ColBERT introduced late interaction: keep one vector per token, but defer the interaction to query time. This achieves:
+
+- **Pre-computation**: Document tokens can be indexed offline
+- **Fine-grained matching**: Token-level alignment, not just bag-of-words
+- **Scalability**: MaxSim over pre-indexed tokens is much faster than cross-encoder inference
+
+The key insight: the expensive transformer computation happens during encoding. The "interaction" (MaxSim) is just dot products—cheap and parallelizable.
 
 ### Late Interaction (MaxSim)
 
@@ -88,6 +108,12 @@ For query token `[0, 1]` ("France"):
 
 **Why better:** Captures token-level semantics that single vectors lose. "Capital of France" matches documents where "capital" and "France" both have strong matches, even in different parts of the document.
 
+**When NOT to use:**
+- ❌ First-stage retrieval over millions of docs (too slow, use dense + ANN)
+- ❌ Very short documents (<10 tokens, little benefit over dense)
+- ❌ Storage-constrained without pooling (10-100x larger than dense)
+- ❌ Queries with many stopwords (MaxSim sums all tokens, including noise)
+
 ### Cross-encoder
 
 Full transformer attention over concatenated query+document:
@@ -99,6 +125,8 @@ $$\text{score}(q, d) = \text{Model}(\texttt{[CLS]} \oplus q \oplus \texttt{[SEP]
 **Why better:** The model sees query and document tokens *together*, allowing direct cross-attention. Bi-encoders (dense) encode query and doc separately, losing this interaction. Cross-encoders achieve ~5x better MRR@10 than dense on MS MARCO (Nogueira & Cho, 2019).
 
 **Trade-off:** Cannot pre-compute document embeddings. Must run inference for every (query, doc) pair at query time. Use as a second-stage reranker over a small candidate set (typically 100-1000 docs).
+
+**When to use:** Final reranking stage when latency allows (~10ms per query-doc pair). Not suitable for first-stage retrieval.
 
 ## Diversity Selection
 
@@ -231,25 +259,7 @@ From Clavie et al. (2024) on MS MARCO dev. Results vary by document length and q
 
 ## Historical Context
 
-### The Retrieval-Reranking Gap (2019)
-
-Before ColBERT, there was a frustrating dichotomy in neural IR:
-
-**Bi-encoders (dense):** Encode query and document independently. Fast (ANN search works), but compresses everything into one vector.
-
-**Cross-encoders:** Run a full transformer over concatenated query+document. Slower (can't pre-compute), but sees query-document interactions directly. About 5x better MRR@10 on MS MARCO (Nogueira & Cho, 2019).
-
-The practical gap: cross-encoders are too slow for first-stage retrieval over millions of docs, bi-encoders aren't precise enough for final ranking.
-
-### Late Interaction: A Middle Path (2020)
-
-Khattab & Zaharia's ColBERT introduced late interaction: keep one vector per token, but defer the interaction to query time. This achieves:
-
-- **Pre-computation**: Document tokens can be indexed offline
-- **Fine-grained matching**: Token-level alignment, not just bag-of-words
-- **Scalability**: MaxSim over pre-indexed tokens is much faster than cross-encoder inference
-
-The key insight: the expensive transformer computation happens during encoding. The "interaction" (MaxSim) is just dot products—cheap and parallelizable.
+This section provides additional historical background. See the [Scoring Paradigms](#scoring-paradigms) section above for the main discussion of the retrieval-reranking gap and late interaction.
 
 ### The Storage Problem (2021-2024)
 
