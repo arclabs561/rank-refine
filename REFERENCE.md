@@ -152,11 +152,11 @@ This crate **does not handle**:
 
 ### The Storage Problem
 
-ColBERT stores ~128 vectors per document. For 10M documents:
+ColBERT stores one vector per token. For 10M documents with 100 tokens each:
 
-$$\text{Storage} = 10^7 \times 128 \times 128 \times 4 = 655\text{ GB}$$
+$$\text{Storage} = 10^7 \times 100 \times 128 \times 4 = 512\text{ GB}$$
 
-That's a lot of disk space! Can we compress without losing much quality?
+For comparison, dense embeddings would be ~5 GB (10M × 128 × 4 bytes). That's a lot of disk space! Can we compress without losing much quality?
 
 ### The Key Insight
 

@@ -111,7 +111,7 @@ For query token `[0, 1]` ("France"):
 **When NOT to use:**
 - ❌ First-stage retrieval over millions of docs (too slow, use dense + ANN)
 - ❌ Very short documents (<10 tokens, little benefit over dense)
-- ❌ Storage-constrained without pooling (10-100x larger than dense)
+- ❌ Storage-constrained without pooling (typically 10-50x larger than dense, depends on document length)
 - ❌ Queries with many stopwords (MaxSim sums all tokens, including noise)
 
 ### Cross-encoder
@@ -222,7 +222,7 @@ Older x86_64 CPUs without AVX2 fall back to scalar. SSE4.1 could be added but mo
 
 ## Token Pooling
 
-ColBERT stores $|D|$ embeddings per document. For a 100-token document with 128-dim embeddings, that's $100 \times 128 \times 4 = 51$ KB per document. At 10M documents, you need 500 GB just for embeddings.
+ColBERT stores $|D|$ embeddings per document. For a 100-token document with 128-dim embeddings, that's $100 \times 128 \times 4 = 51$ KB per document. At 10M documents, you need 512 GB just for embeddings (vs ~5 GB for dense: 10M × 128 × 4 bytes).
 
 Pooling reduces storage by clustering similar tokens:
 

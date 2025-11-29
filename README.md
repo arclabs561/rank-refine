@@ -1,6 +1,6 @@
 # rank-refine
 
-SIMD-accelerated similarity scoring for vector search and RAG. Provides MaxSim (ColBERT), cosine similarity, diversity selection (MMR, DPP), and token pooling.
+SIMD-accelerated similarity scoring for vector search and RAG. Provides MaxSim (ColBERT), cosine similarity, diversity selection (MMR, DPP), token pooling, and Matryoshka refinement.
 
 [![CI](https://github.com/arclabs561/rank-refine/actions/workflows/ci.yml/badge.svg)](https://github.com/arclabs561/rank-refine/actions)
 [![Crates.io](https://img.shields.io/crates/v/rank-refine.svg)](https://crates.io/crates/rank-refine)
@@ -35,8 +35,9 @@ Scoring primitives for retrieval systems:
 | ColBERT/late interaction | `maxsim_vecs`, `maxsim_batch` |
 | Diversity selection | `mmr_cosine`, `dpp` |
 | Compress token embeddings | `pool_tokens`, `pool_tokens_adaptive` |
+| Two-stage refinement | `matryoshka::refine` |
 
-**What this is NOT**: embedding generation, model inference, storage. See [fastembed-rs](https://github.com/Anush008/fastembed-rs) for inference.
+**What this is NOT**: embedding generation, model weights, or storage systems. This crate scores embeddings you provide; it does not run model inference. See [fastembed-rs](https://github.com/Anush008/fastembed-rs) for inference. Trait-based interfaces available for custom models (see `crossencoder` module).
 
 ## Usage
 
@@ -150,7 +151,7 @@ This captures token-level alignment: "capital" and "France" both have strong mat
 
 **When not to use**:
 - First-stage retrieval (too slow for millions of docs)
-- Storage-constrained (10-100x larger than dense)
+- Storage-constrained (typically 10-50x larger than dense, depends on document length)
 
 ### MMR (Diversity)
 
@@ -178,7 +179,7 @@ $$\text{MMR} = \arg\max_d \left[ \lambda \cdot \text{rel}(d) - (1-\lambda) \cdot
 ### Token Pooling
 
 **Storage**: ColBERT stores one vector per token. For 10M documents with 100 tokens each:
-- Storage = 10M × 100 × 128 × 4 bytes = 512 GB
+- Storage = 10M × 100 × 128 × 4 bytes = 512 GB (vs ~5 GB for dense: 10M × 128 × 4 bytes)
 
 **Token pooling**: Cluster similar document tokens and store only cluster centroids:
 
@@ -250,11 +251,16 @@ What problem are you solving?
    - Storage-constrained deployments
    - Factor 2-3 recommended (50-66% reduction)
 
+5. **Two-stage refinement with Matryoshka** → Use `matryoshka::refine`
+   - After coarse search using head dimensions
+   - Refine candidates using tail dimensions
+   - Matryoshka embeddings (hierarchical dimension packing)
+
 **When not to use**:
 - First-stage retrieval over millions of docs (use dense + ANN)
 - Very short documents (<10 tokens, little benefit over dense)
 - Latency-critical first-stage (dense embeddings are faster)
-- Storage-constrained without pooling (10-100x larger than dense)
+- Storage-constrained without pooling (typically 10-50x larger than dense, depends on document length)
 
 See [REFERENCE.md](REFERENCE.md) for algorithm details and edge cases.
 
