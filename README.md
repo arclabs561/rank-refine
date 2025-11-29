@@ -1,6 +1,6 @@
 # rank-refine
 
-SIMD-accelerated similarity scoring for vector search and RAG.
+SIMD-accelerated similarity scoring for vector search and RAG. Provides MaxSim (ColBERT), cosine similarity, diversity selection (MMR, DPP), and token pooling.
 
 [![CI](https://github.com/arclabs561/rank-refine/actions/workflows/ci.yml/badge.svg)](https://github.com/arclabs561/rank-refine/actions)
 [![Crates.io](https://img.shields.io/crates/v/rank-refine.svg)](https://crates.io/crates/rank-refine)
@@ -12,18 +12,18 @@ cargo add rank-refine
 
 ## Why Late Interaction?
 
-Traditional dense retrieval compresses an entire document into a single vector. This works well for broad topic matching, but loses fine-grained alignment. 
+Dense retrieval encodes each document as a single vector. This works for broad matching but loses token-level alignment.
 
-**The Problem**: Searching for "capital of France" might match a document about "France's economic capital" with high overall similarity, even if it never mentions "capital" in the geographic sense.
+**Problem**: A query like "capital of France" might match a document about "France's economic capital" with high similarity, even if it never mentions "capital" in the geographic sense.
 
-**Late Interaction Solution**: Keep one vector per token and match at query time. Each query token finds its best-matching document token, then sum those matches.
+**Solution**: Late interaction (ColBERT-style) keeps one vector per token instead of pooling. At query time, each query token finds its best-matching document token, then we sum those matches.
 
 ```
 Dense:           "the quick brown fox" → [0.1, 0.2, ...]  (1 vector)
 Late Interaction: "the quick brown fox" → [[...], [...], [...], [...]]  (4 vectors)
 ```
 
-This preserves token-level semantics that single-vector embeddings lose, enabling precise reranking.
+This preserves token-level semantics that single-vector embeddings lose. Useful for reranking in RAG pipelines.
 
 ## What This Is
 
@@ -118,11 +118,11 @@ let score = colbert::maxsim_vecs(&query, &doc);
 
 ### MaxSim (Late Interaction)
 
-For each query token, find its best-matching document token, then sum:
+MaxSim scores token-level alignment. For each query token, find its best-matching document token, then sum:
 
 $$\text{score}(Q, D) = \sum_{i} \max_{j} (q_i \cdot d_j)$$
 
-**Visual Intuition**:
+**Visual example**:
 
 ```
 Query tokens:     [q1]  [q2]  [q3]
@@ -139,44 +139,48 @@ MaxSim = 0.9 + 0.8 + ... (sum of best matches)
 **Example**: Query "capital of France" (2 tokens) vs document "Paris is the capital of France" (6 tokens):
 - Query token "capital" finds best match: `dot("capital", "capital") = 0.95`
 - Query token "France" finds best match: `dot("France", "France") = 0.92`
-- **MaxSim = 0.95 + 0.92 = 1.87**
+- MaxSim = 0.95 + 0.92 = 1.87
 
-This captures **token-level alignment**: "capital" and "France" both have strong matches, even if they appear in different parts of the document. Single-vector embeddings would average these signals and lose precision.
+This captures token-level alignment: "capital" and "France" both have strong matches, even if they appear in different parts of the document. Single-vector embeddings average these signals and lose precision.
 
-**When to Use**:
-- ✅ Second-stage reranking (after dense retrieval)
-- ✅ Precision-critical applications (legal, medical)
-- ✅ Queries with multiple important terms
-- ❌ First-stage retrieval (too slow for millions of docs)
-- ❌ Storage-constrained (10-100x larger than dense)
+**When to use**:
+- Second-stage reranking (after dense retrieval)
+- Precision-critical applications (legal, medical)
+- Queries with multiple important terms
+
+**When not to use**:
+- First-stage retrieval (too slow for millions of docs)
+- Storage-constrained (10-100x larger than dense)
 
 ### MMR (Diversity)
 
-**The Problem**: Top-k by relevance returns near-duplicates. Search "async programming" returns 10 Python asyncio tutorials instead of Python, Rust, JavaScript, and Go examples.
+**Problem**: Top-k by relevance returns near-duplicates. A search for "async programming" might return 10 Python asyncio tutorials instead of examples in Python, Rust, JavaScript, and Go.
 
-**The Solution**: Balance relevance with diversity by penalizing similarity to already-selected items:
+**Solution**: Balance relevance with diversity by penalizing similarity to already-selected items:
 
 $$\text{MMR} = \arg\max_d \left[ \lambda \cdot \text{rel}(d) - (1-\lambda) \cdot \max_{s \in S} \text{sim}(d,s) \right]$$
 
-**Lambda Parameter**:
+**Lambda parameter**:
 - `λ = 1.0`: Pure relevance (equivalent to top-k)
 - `λ = 0.5`: Balanced (common default for RAG)
 - `λ = 0.3`: Strong diversity (exploration mode)
 - `λ = 0.0`: Maximum diversity (ignore relevance)
 
-**When to Use**:
-- ✅ RAG pipelines (diverse context helps LLMs)
-- ✅ Recommendation systems (avoid redundancy)
-- ✅ Search result diversification
-- ❌ Known-item search (single correct answer)
-- ❌ When relevance is paramount
+**When to use**:
+- RAG pipelines (diverse context helps LLMs)
+- Recommendation systems (avoid redundancy)
+- Search result diversification
+
+**When not to use**:
+- Known-item search (single correct answer)
+- When relevance is paramount
 
 ### Token Pooling
 
-**The Storage Problem**: ColBERT stores ~128 vectors per document. For 10M documents with 100 tokens each:
-- Storage = 10M × 100 × 128 × 4 bytes = **512 GB**
+**Storage**: ColBERT stores one vector per token. For 10M documents with 100 tokens each:
+- Storage = 10M × 100 × 128 × 4 bytes = 512 GB
 
-**The Solution**: Cluster similar document tokens and store only cluster centroids:
+**Token pooling**: Cluster similar document tokens and store only cluster centroids:
 
 ```
 Before:  [tok1] [tok2] [tok3] [tok4] [tok5] [tok6]  (6 vectors)
@@ -184,25 +188,25 @@ Before:  [tok1] [tok2] [tok3] [tok4] [tok5] [tok6]  (6 vectors)
 After:   [mean(1,2)]  [tok3] [mean(4,5)] [tok6]    (4 vectors = 33% reduction)
 ```
 
-**Why It Works**: Many tokens are redundant. Function words cluster together, as do related content words. Merging similar tokens loses little discriminative information.
+**Why it works**: Many tokens are redundant. Function words cluster together, as do related content words. Merging similar tokens loses little discriminative information.
 
 | Factor | Tokens Kept | MRR@10 Loss | When to Use |
 |--------|-------------|-------------|-------------|
-| 2 | 50% | 0.1–0.3% | **Default choice** |
+| 2 | 50% | 0.1–0.3% | Default choice |
 | 3 | 33% | 0.5–1.0% | Good tradeoff |
 | 4 | 25% | 1.5–3.0% | Storage-constrained (use `hierarchical` feature) |
 | 8+ | 12% | 5–10% | Extreme storage constraints only |
 
-Numbers from MS MARCO dev (Clavie et al., 2024). **Key insight**: Pool aggressively at index time. You can always re-score with unpooled embeddings at query time if precision matters.
+Numbers from MS MARCO dev (Clavie et al., 2024). Pool at index time. Re-score with unpooled embeddings at query time if needed.
 
-**When Pooling Hurts More**:
+**When pooling hurts more**:
 - Long documents with many distinct concepts
 - Queries that need to distinguish between similar tokens
 - Short passages (less redundancy to exploit)
 
 ## Benchmarks
 
-Apple M3 Max, `cargo bench`:
+Measured on Apple M3 Max with `cargo bench`:
 
 | Operation | Dim | Time |
 |-----------|-----|------|
@@ -214,6 +218,8 @@ Apple M3 Max, `cargo bench`:
 | `maxsim` (pooled 2x) | 32q×64d×128dim | 25μs |
 | `maxsim` (pooled 4x) | 32q×32d×128dim | 12μs |
 
+These timings enable real-time reranking of 100-1000 candidates.
+
 ## Vendoring
 
 If you prefer not to add a dependency:
@@ -224,7 +230,7 @@ If you prefer not to add a dependency:
 
 ## Quick Decision Guide
 
-**What problem are you solving?**
+What problem are you solving?
 
 1. **Scoring embeddings** → Use `cosine` or `dot`
    - Dense embeddings: `cosine(&query, &doc)`
@@ -244,11 +250,11 @@ If you prefer not to add a dependency:
    - Storage-constrained deployments
    - Factor 2-3 recommended (50-66% reduction)
 
-**When NOT to Use**:
-- ❌ First-stage retrieval over millions of docs (use dense + ANN)
-- ❌ Very short documents (<10 tokens, little benefit over dense)
-- ❌ Latency-critical first-stage (dense embeddings are faster)
-- ❌ Storage-constrained without pooling (10-100x larger than dense)
+**When not to use**:
+- First-stage retrieval over millions of docs (use dense + ANN)
+- Very short documents (<10 tokens, little benefit over dense)
+- Latency-critical first-stage (dense embeddings are faster)
+- Storage-constrained without pooling (10-100x larger than dense)
 
 See [REFERENCE.md](REFERENCE.md) for algorithm details and edge cases.
 
