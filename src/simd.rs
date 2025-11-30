@@ -1290,7 +1290,7 @@ mod proptests {
             b in arb_vec(32).prop_filter("non-zero", |v| v.iter().any(|x| x.abs() > 1e-6))
         ) {
             let c = cosine(&a, &b);
-            prop_assert!(c >= -1.0 - 1e-5 && c <= 1.0 + 1e-5, "cosine {} out of bounds", c);
+            prop_assert!((-1.0 - 1e-5..=1.0 + 1e-5).contains(&c), "cosine {} out of bounds", c);
         }
 
         /// Cosine similarity is commutative
@@ -1420,7 +1420,7 @@ mod proptests {
             // Create identical query and doc token
             let token: Vec<f32> = (0..dim).map(|i| (i as f32 + 1.0) * 0.1).collect();
             let query: Vec<Vec<f32>> = vec![token.clone(); n_query];
-            let doc = vec![token.clone()];
+            let doc = [token.clone()];
 
             let q_refs: Vec<&[f32]> = query.iter().map(Vec::as_slice).collect();
             let d_refs: Vec<&[f32]> = doc.iter().map(Vec::as_slice).collect();

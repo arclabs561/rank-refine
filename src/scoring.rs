@@ -624,7 +624,7 @@ mod proptests {
         fn normalize_bounded(scores in proptest::collection::vec(-100.0f32..100.0, 2..20)) {
             let normalized = normalize_scores(&scores);
             for &s in &normalized {
-                prop_assert!(s >= -0.01 && s <= 1.01, "Score {} out of bounds", s);
+                prop_assert!((-0.01..=1.01).contains(&s), "Score {} out of bounds", s);
             }
         }
 
@@ -711,7 +711,7 @@ mod proptests {
 
             let scorer = DenseScorer::Cosine;
             let score = scorer.score(&a, &b);
-            prop_assert!(score >= -1.01 && score <= 1.01, "Cosine {} out of bounds", score);
+            prop_assert!((-1.01..=1.01).contains(&score), "Cosine {} out of bounds", score);
         }
 
         // ─────────────────────────────────────────────────────────────────────────

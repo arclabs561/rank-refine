@@ -73,7 +73,7 @@ fn e2e_two_stage_dense_then_colbert() {
     const DIM: usize = 128;
 
     // Corpus
-    let documents = vec![
+    let documents = [
         (
             "d1",
             "Rust is a systems programming language focused on safety",
@@ -144,7 +144,7 @@ fn e2e_matryoshka_refinement() {
     const FULL_DIM: usize = 768;
     const HEAD_DIM: usize = 256;
 
-    let documents = vec![
+    let documents = [
         ("d1", "Rust programming language"),
         ("d2", "Python scripting"),
         ("d3", "Rust memory safety"),
@@ -253,7 +253,7 @@ fn e2e_token_pooling_storage_workflow() {
 #[test]
 fn e2e_cross_encoder_rerank() {
     let query = "rust memory safety";
-    let documents = vec![
+    let documents = [
         "Rust guarantees memory safety without garbage collection",
         "Python is dynamically typed",
         "Memory management in Rust is automatic and safe",
@@ -292,7 +292,7 @@ fn e2e_hybrid_scoring_with_normalization() {
     const DIM: usize = 64;
 
     let query = "fast systems programming";
-    let documents = vec![
+    let documents = [
         ("d1", "Rust is blazingly fast"),
         ("d2", "Python is slow but easy"),
         ("d3", "C++ is fast but unsafe"),
@@ -325,13 +325,13 @@ fn e2e_hybrid_scoring_with_normalization() {
     // Verify normalization worked
     for &score in &dense_norm {
         assert!(
-            score >= 0.0 && score <= 1.0,
+            (0.0..=1.0).contains(&score),
             "Normalized score out of bounds"
         );
     }
     for &score in &bm25_norm {
         assert!(
-            score >= 0.0 && score <= 1.0,
+            (0.0..=1.0).contains(&score),
             "Normalized score out of bounds"
         );
     }
@@ -481,7 +481,7 @@ fn e2e_mmr_diversity() {
     const DIM: usize = 64;
 
     // Documents: some similar, some diverse
-    let documents = vec![
+    let documents = [
         ("rust1", "Rust systems programming"),
         ("rust2", "Rust memory safety"),
         ("rust3", "Rust web assembly"),
@@ -583,7 +583,7 @@ fn e2e_score_normalization_pipeline() {
     const DIM: usize = 128;
 
     let query = mock_token_embed("rust memory safety", DIM);
-    let documents = vec![
+    let documents = [
         mock_token_embed("Rust systems programming", DIM),
         mock_token_embed("Python machine learning", DIM),
         mock_token_embed("Rust memory management", DIM),
@@ -600,7 +600,7 @@ fn e2e_score_normalization_pipeline() {
     let normalized = simd::normalize_maxsim_batch(&raw_scores, 32);
     for &s in &normalized {
         assert!(
-            s >= 0.0 && s <= 2.0,
+            (0.0..=2.0).contains(&s),
             "Normalized score {} should be in reasonable range",
             s
         );
@@ -651,7 +651,7 @@ fn e2e_weighted_maxsim_pipeline() {
     // Token importance weights (first token most important)
     let weights = vec![2.0, 1.5, 1.0];
 
-    let documents = vec![
+    let documents = [
         mock_token_embed("important systems", DIM), // Has "important"
         mock_token_embed("critical analysis", DIM), // Has "critical"
         mock_token_embed("keyword search", DIM),    // Has "keyword"
@@ -702,7 +702,7 @@ fn e2e_rag_rerank_pipeline() {
     let query_tokens = mock_token_embed(query, DIM);
 
     // Retrieved chunks (simulating retrieval results)
-    let chunks = vec![
+    let chunks = [
         (
             1,
             "Rust uses ownership and borrowing to ensure memory safety",
@@ -765,7 +765,7 @@ fn e2e_rag_rerank_pipeline() {
     let normalized = normalize_scores(&scores);
     for &s in &normalized {
         assert!(
-            s >= 0.0 && s <= 1.0,
+            (0.0..=1.0).contains(&s),
             "Normalized score {} should be in [0, 1]",
             s
         );

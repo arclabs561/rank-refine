@@ -331,7 +331,7 @@ mod proptests {
             let b: Vec<f32> = b_vals.into_iter().take(dim).collect();
             if let (Some(na), Some(nb)) = (normalize(&a), normalize(&b)) {
                 let cos = na.cosine(&nb);
-                prop_assert!(cos >= -1.01 && cos <= 1.01, "Cosine was {}", cos);
+                prop_assert!((-1.01..=1.01).contains(&cos), "Cosine was {}", cos);
             }
         }
 

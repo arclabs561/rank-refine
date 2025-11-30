@@ -933,7 +933,7 @@ mod tests {
 
     #[test]
     fn test_maxsim_with_pooled_tokens() {
-        let query = vec![vec![1.0, 0.0, 0.0, 0.0], vec![0.0, 1.0, 0.0, 0.0]];
+        let query = [vec![1.0, 0.0, 0.0, 0.0], vec![0.0, 1.0, 0.0, 0.0]];
         let doc = vec![
             vec![0.9, 0.1, 0.0, 0.0],
             vec![0.8, 0.2, 0.0, 0.0],
@@ -1029,7 +1029,7 @@ mod tests {
         use kodama::{linkage, Method};
 
         // Create 6 tokens that will cluster into 3 pairs
-        let tokens = vec![
+        let tokens = [
             vec![1.0, 0.0, 0.0, 0.0], // group A
             vec![0.9, 0.1, 0.0, 0.0], // group A (similar to 0)
             vec![0.0, 1.0, 0.0, 0.0], // group B
@@ -1367,7 +1367,7 @@ mod proptests {
                 .collect();
 
             let pooled = pool_tokens_sequential(&tokens, window);
-            let expected = (n_tokens + window - 1) / window;
+            let expected = n_tokens.div_ceil(window);
             prop_assert_eq!(pooled.len(), expected);
         }
 
@@ -1549,7 +1549,7 @@ mod proptests {
                 (0..dim).map(|i| if i == 0 { 1.0 } else { 0.0 }).collect(),
             ];
             let b: Vec<Vec<f32>> = vec![
-                (0..dim).map(|i| if i == 0 { 0.5 } else { 0.5 }).collect(),
+                (0..dim).map(|_| 0.5).collect(),
                 (0..dim).map(|i| if i == 1 { 1.0 } else { 0.0 }).collect(),
             ];
 
