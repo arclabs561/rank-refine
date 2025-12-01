@@ -964,28 +964,24 @@ pub fn bm25_weights(
     // Validate k1 parameter
     let k1 = k1.max(0.0); // k1 should be non-negative
 
-    let idf_scores: Vec<f32> = token_doc_freqs
-        .iter()
-        .map(|&df| {
-            if df == 0 {
-                (total_docs as f32 + 1.0).ln()
-            } else if df > total_docs {
-                // Invalid: document frequency exceeds total documents
-                0.0
-            } else {
-                ((total_docs as f32 + 1.0) / (df as f32 + 1.0)).ln()
-            }
-        })
-        .collect();
+    let mut idf_scores = Vec::with_capacity(token_doc_freqs.len());
+    for &df in token_doc_freqs {
+        let idf = if df == 0 {
+            (total_docs as f32 + 1.0).ln()
+        } else if df > total_docs {
+            // Invalid: document frequency exceeds total documents
+            0.0
+        } else {
+            ((total_docs as f32 + 1.0) / (df as f32 + 1.0)).ln()
+        };
+        idf_scores.push(idf);
+    }
 
-    let bm25_scores: Vec<f32> = idf_scores
-        .iter()
-        .zip(token_query_freqs.iter())
-        .map(|(&idf, &tf)| {
-            let tf_f32 = tf as f32;
-            idf * (tf_f32 * (k1 + 1.0)) / (tf_f32 + k1)
-        })
-        .collect();
+    let mut bm25_scores = Vec::with_capacity(idf_scores.len());
+    for (&idf, &tf) in idf_scores.iter().zip(token_query_freqs.iter()) {
+        let tf_f32 = tf as f32;
+        bm25_scores.push(idf * (tf_f32 * (k1 + 1.0)) / (tf_f32 + k1));
+    }
 
     // Normalize to [0, 1]
     let min_score = bm25_scores
@@ -1063,21 +1059,20 @@ pub fn patches_to_regions(
     let patch_width = image_width / patches_per_side;
     let patch_height = image_height / patches_per_side;
 
-    patch_indices
-        .iter()
-        .filter_map(|&patch_idx| {
-            // Validate patch index is within valid range
-            let total_patches = patches_per_side * patches_per_side;
-            if patch_idx >= total_patches {
-                return None; // Skip invalid patch indices
-            }
-            let row = patch_idx / patches_per_side;
-            let col = patch_idx % patches_per_side;
-            let x = col * patch_width;
-            let y = row * patch_height;
-            Some((x, y, patch_width, patch_height))
-        })
-        .collect()
+    let total_patches = patches_per_side * patches_per_side;
+    let mut regions = Vec::with_capacity(patch_indices.len());
+    for &patch_idx in patch_indices {
+        // Validate patch index is within valid range
+        if patch_idx >= total_patches {
+            continue; // Skip invalid patch indices
+        }
+        let row = patch_idx / patches_per_side;
+        let col = patch_idx % patches_per_side;
+        let x = col * patch_width;
+        let y = row * patch_height;
+        regions.push((x, y, patch_width, patch_height));
+    }
+    regions
 }
 
 /// Extract text snippet indices from alignments for a document.
