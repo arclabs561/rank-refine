@@ -56,5 +56,7 @@ fn main() {
     println!("\nTo build for WebAssembly:");
     println!("1. Install wasm-pack: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh");
     println!("2. Build: wasm-pack build --target web --out-dir pkg");
-    println!("3. Use from JavaScript: import { cosine, maxsim_vecs } from './pkg/rank_refine.js'");
+    println!(
+        "3. Use from JavaScript: import {{ cosine, maxsim_vecs }} from './pkg/rank_refine.js'"
+    );
 }

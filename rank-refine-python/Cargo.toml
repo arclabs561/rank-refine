@@ -1,0 +1,19 @@
+[package]
+name = "rank-refine-python"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Python bindings for rank-refine"
+repository = "https://github.com/arclabs561/rank-refine"
+readme = "README.md"
+
+[lib]
+name = "rank_refine"
+crate-type = ["cdylib"]
+
+[dependencies]
+rank-refine = { path = "../rank-refine" }
+pyo3 = { workspace = true }
+

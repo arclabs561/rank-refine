@@ -1,31 +1,20 @@
-[package]
-name = "rank-refine"
+[workspace]
+members = ["rank-refine", "rank-refine-python", "fuzz"]
+resolver = "2"
+default-members = ["rank-refine"]
+
+[workspace.package]
 version = "0.7.36"
 edition = "2021"
 rust-version = "1.74"
 license = "MIT OR Apache-2.0"
-description = "SIMD-accelerated MaxSim (ColBERT/ColPali), cosine similarity, diversity (MMR/DPP), token alignment/highlighting for vector search and RAG. Supports text and multimodal late interaction."
-keywords = ["vector-search", "similarity", "colbert", "colpali", "rag", "simd", "multimodal", "late-interaction", "maxsim", "token-alignment"]
-categories = ["algorithms", "science", "mathematics"]
-repository = "https://github.com/arclabs561/rank-refine"
-readme = "README.md"
 authors = ["Arc <attobop@gmail.com>"]
 
-[dependencies]
-kodama = { version = "0.3", optional = true }
-serde = { version = "1.0", features = ["derive"], optional = true }
-# ort = { version = "2.0.0-rc.10", optional = true }  # TODO: Enable when stable
-
-[dev-dependencies]
+[workspace.dependencies]
+kodama = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+pyo3 = { version = "0.21", features = ["extension-module", "abi3-py37"] }
 criterion = "0.5"
 proptest = "1"
-
-[features]
-default = []
-hierarchical = ["kodama"]
-serde = ["dep:serde"]
-# ort = ["dep:ort"]  # TODO: Enable when ort 2.0 is stable
-
-[[bench]]
-name = "refine"
-harness = false
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }

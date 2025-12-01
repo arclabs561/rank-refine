@@ -48,4 +48,3 @@ fuzz_target!(|data: &[u8]| {
         let _ = colbert::pool_tokens_with_protected(&tokens, pool_factor, protected);
     }
 });
-

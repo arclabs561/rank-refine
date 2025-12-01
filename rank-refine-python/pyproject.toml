@@ -1,0 +1,42 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "rank-refine-python"
+version = "0.7.36"
+description = "Python bindings for rank-refine — SIMD-accelerated similarity scoring for vector search and RAG"
+readme = "README.md"
+requires-python = ">=3.7"
+license = { text = "MIT OR Apache-2.0" }
+authors = [{ name = "Arc", email = "attobop@gmail.com" }]
+keywords = ["vector-search", "similarity", "colbert", "colpali", "rag", "simd", "maxsim", "late-interaction"]
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[project.urls]
+Homepage = "https://github.com/arclabs561/rank-refine"
+Documentation = "https://docs.rs/rank-refine"
+Repository = "https://github.com/arclabs561/rank-refine"
+
+[tool.uv]
+# Rebuild package when Rust files change
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "../rank-refine/Cargo.toml" },
+    { file = "../rank-refine/src/**/*.rs" },
+    { file = "src/**/*.rs" },
+]
+
