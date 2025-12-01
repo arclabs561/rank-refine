@@ -1829,6 +1829,133 @@ mod proptests {
             );
         }
 
+        // ─────────────────────────────────────────────────────────────────────────
+        // Alignment property tests
+        // ─────────────────────────────────────────────────────────────────────────
+
+        /// Alignment sum always equals MaxSim score
+        #[test]
+        fn maxsim_alignments_sum_equals_maxsim(
+            q_data in proptest::collection::vec(arb_vec(8), 1..5),
+            d_data in proptest::collection::vec(arb_vec(8), 1..5)
+        ) {
+            let q_refs: Vec<&[f32]> = q_data.iter().map(Vec::as_slice).collect();
+            let d_refs: Vec<&[f32]> = d_data.iter().map(Vec::as_slice).collect();
+
+            let alignments = maxsim_alignments(&q_refs, &d_refs);
+            let maxsim_score = maxsim(&q_refs, &d_refs);
+            let alignment_sum: f32 = alignments.iter().map(|(_, _, s)| s).sum();
+
+            prop_assert!(
+                (alignment_sum - maxsim_score).abs() < 1e-4,
+                "Alignment sum {} != MaxSim {}",
+                alignment_sum,
+                maxsim_score
+            );
+        }
+
+        /// Alignment count equals query token count
+        #[test]
+        fn maxsim_alignments_count_equals_query_tokens(
+            q_data in proptest::collection::vec(arb_vec(8), 1..5),
+            d_data in proptest::collection::vec(arb_vec(8), 1..5)
+        ) {
+            let q_refs: Vec<&[f32]> = q_data.iter().map(Vec::as_slice).collect();
+            let d_refs: Vec<&[f32]> = d_data.iter().map(Vec::as_slice).collect();
+
+            let alignments = maxsim_alignments(&q_refs, &d_refs);
+            prop_assert_eq!(
+                alignments.len(),
+                q_data.len(),
+                "Should have one alignment per query token"
+            );
+        }
+
+        /// Alignment query indices are sequential
+        #[test]
+        fn maxsim_alignments_query_indices_sequential(
+            q_data in proptest::collection::vec(arb_vec(8), 1..5),
+            d_data in proptest::collection::vec(arb_vec(8), 1..5)
+        ) {
+            let q_refs: Vec<&[f32]> = q_data.iter().map(Vec::as_slice).collect();
+            let d_refs: Vec<&[f32]> = d_data.iter().map(Vec::as_slice).collect();
+
+            let alignments = maxsim_alignments(&q_refs, &d_refs);
+            for (i, (q_idx, _, _)) in alignments.iter().enumerate() {
+                prop_assert_eq!(
+                    *q_idx, i,
+                    "Query index {} should match position {}",
+                    q_idx, i
+                );
+            }
+        }
+
+        /// Alignment doc indices are valid
+        #[test]
+        fn maxsim_alignments_doc_indices_valid(
+            q_data in proptest::collection::vec(arb_vec(8), 1..5),
+            d_data in proptest::collection::vec(arb_vec(8), 1..5)
+        ) {
+            let q_refs: Vec<&[f32]> = q_data.iter().map(Vec::as_slice).collect();
+            let d_refs: Vec<&[f32]> = d_data.iter().map(Vec::as_slice).collect();
+
+            let alignments = maxsim_alignments(&q_refs, &d_refs);
+            for (_, d_idx, _) in &alignments {
+                prop_assert!(
+                    (*d_idx as usize) < d_data.len(),
+                    "Doc index {} out of bounds (len={})",
+                    d_idx,
+                    d_data.len()
+                );
+            }
+        }
+
+        /// Highlight matches are subset of doc indices
+        #[test]
+        fn highlight_matches_valid_indices(
+            q_data in proptest::collection::vec(arb_vec(8), 1..5),
+            d_data in proptest::collection::vec(arb_vec(8), 1..5),
+            threshold in -1.0f32..2.0
+        ) {
+            let q_refs: Vec<&[f32]> = q_data.iter().map(Vec::as_slice).collect();
+            let d_refs: Vec<&[f32]> = d_data.iter().map(Vec::as_slice).collect();
+
+            let highlighted = highlight_matches(&q_refs, &d_refs, threshold);
+            for &idx in &highlighted {
+                prop_assert!(
+                    idx < d_data.len(),
+                    "Highlighted index {} out of bounds (len={})",
+                    idx,
+                    d_data.len()
+                );
+            }
+            // Should be sorted
+            for i in 1..highlighted.len() {
+                prop_assert!(
+                    highlighted[i - 1] < highlighted[i],
+                    "Highlighted indices should be sorted"
+                );
+            }
+        }
+
+        /// Highlight matches with very high threshold should be empty or small
+        #[test]
+        fn highlight_matches_high_threshold(
+            q_data in proptest::collection::vec(arb_vec(8), 1..5),
+            d_data in proptest::collection::vec(arb_vec(8), 1..5)
+        ) {
+            let q_refs: Vec<&[f32]> = q_data.iter().map(Vec::as_slice).collect();
+            let d_refs: Vec<&[f32]> = d_data.iter().map(Vec::as_slice).collect();
+
+            let high_threshold = highlight_matches(&q_refs, &d_refs, 10.0);
+            let low_threshold = highlight_matches(&q_refs, &d_refs, -10.0);
+
+            prop_assert!(
+                high_threshold.len() <= low_threshold.len(),
+                "High threshold should return fewer or equal matches"
+            );
+        }
+
         /// Weighted MaxSim scales with uniform weight
         #[test]
         fn maxsim_weighted_uniform_scaling(

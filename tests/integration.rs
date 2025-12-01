@@ -637,6 +637,294 @@ fn e2e_score_normalization_pipeline() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// E2E Test: Token Alignment Pipeline
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn e2e_alignment_pipeline() {
+    const DIM: usize = 128;
+
+    let query = mock_token_embed("rust memory safety", DIM);
+    let documents = [
+        mock_token_embed("Rust systems programming", DIM),
+        mock_token_embed("Python machine learning", DIM),
+        mock_token_embed("Rust memory management", DIM),
+    ];
+
+    // Get alignments for each document
+    let mut all_alignments = Vec::new();
+    for (doc_idx, doc) in documents.iter().enumerate() {
+        let alignments = simd::maxsim_alignments_vecs(&query, doc);
+        all_alignments.push((doc_idx, alignments));
+    }
+
+    // Verify alignment properties
+    for (doc_idx, alignments) in &all_alignments {
+        // Should have one alignment per query token
+        assert_eq!(
+            alignments.len(),
+            query.len(),
+            "Doc {} should have {} alignments (one per query token)",
+            doc_idx,
+            query.len()
+        );
+
+        // Verify alignment sum equals MaxSim
+        let maxsim_score = simd::maxsim_vecs(&query, &documents[*doc_idx]);
+        let alignment_sum: f32 = alignments.iter().map(|(_, _, s)| s).sum();
+        assert!(
+            (alignment_sum - maxsim_score).abs() < 1e-4,
+            "Doc {}: Alignment sum {} should equal MaxSim {}",
+            doc_idx,
+            alignment_sum,
+            maxsim_score
+        );
+
+        // Verify query indices are sequential
+        for (i, (q_idx, _, _)) in alignments.iter().enumerate() {
+            assert_eq!(
+                *q_idx, i,
+                "Doc {}: Query index should match position",
+                doc_idx
+            );
+        }
+    }
+
+    // Test highlighting
+    let doc0_highlighted = simd::highlight_matches_vecs(&query, &documents[0], 0.5);
+    assert!(
+        !doc0_highlighted.is_empty(),
+        "Should have at least some highlighted tokens"
+    );
+    assert!(
+        doc0_highlighted.iter().all(|&idx| idx < documents[0].len()),
+        "All highlighted indices should be valid"
+    );
+}
+
+#[test]
+fn e2e_multimodal_alignment_pipeline() {
+    const DIM: usize = 128;
+
+    // Simulate ColPali: query text tokens vs image patch embeddings
+    let query_tokens = mock_token_embed("revenue Q3 chart", DIM);
+    let image_patches = vec![
+        mock_token_embed("background region", DIM),
+        mock_token_embed("revenue table", DIM),
+        mock_token_embed("Q3 label", DIM),
+        mock_token_embed("chart visualization", DIM),
+    ];
+
+    // Flatten patches (each "patch" is actually multiple tokens in this mock)
+    let flattened_patches: Vec<Vec<f32>> = image_patches
+        .iter()
+        .flat_map(|patch| patch.iter().cloned())
+        .collect();
+
+    // For demo, treat each patch as a single embedding (average of its tokens)
+    let patch_embeddings: Vec<Vec<f32>> = image_patches
+        .iter()
+        .map(|patch| {
+            let mut avg = vec![0.0; DIM];
+            for token in patch {
+                for (i, &val) in token.iter().enumerate() {
+                    avg[i] += val;
+                }
+            }
+            let count = patch.len() as f32;
+            avg.iter_mut().for_each(|x| *x /= count);
+            // L2 normalize
+            let norm: f32 = avg.iter().map(|x| x * x).sum::<f32>().sqrt();
+            if norm > 0.0 {
+                avg.iter_mut().for_each(|x| *x /= norm);
+            }
+            avg
+        })
+        .collect();
+
+    // Get alignments: query text tokens → image patches
+    let alignments = simd::maxsim_alignments_vecs(&query_tokens, &patch_embeddings);
+
+    // Verify properties
+    assert_eq!(
+        alignments.len(),
+        query_tokens.len(),
+        "Should have one alignment per query token"
+    );
+
+    // Verify alignment sum equals MaxSim
+    let maxsim_score = simd::maxsim_vecs(&query_tokens, &patch_embeddings);
+    let alignment_sum: f32 = alignments.iter().map(|(_, _, s)| s).sum();
+    assert!(
+        (alignment_sum - maxsim_score).abs() < 1e-4,
+        "Alignment sum {} should equal MaxSim {}",
+        alignment_sum,
+        maxsim_score
+    );
+
+    // Extract highlighted patches
+    let highlighted_patches = simd::highlight_matches_vecs(&query_tokens, &patch_embeddings, 0.3);
+    assert!(
+        !highlighted_patches.is_empty(),
+        "Should have at least some highlighted patches"
+    );
+    assert!(
+        highlighted_patches.iter().all(|&idx| idx < patch_embeddings.len()),
+        "All highlighted patch indices should be valid"
+    );
+}
+
+#[test]
+fn e2e_batch_alignment_consistency() {
+    const DIM: usize = 64;
+
+    let query = mock_token_embed("test query", DIM);
+    let docs = vec![
+        mock_token_embed("first document", DIM),
+        mock_token_embed("second document", DIM),
+        mock_token_embed("third document", DIM),
+    ];
+
+    // Batch scoring
+    let batch_scores = simd::maxsim_batch(&query, &docs);
+
+    // Individual scoring with alignments
+    for (doc_idx, doc) in docs.iter().enumerate() {
+        let individual_score = simd::maxsim_vecs(&query, doc);
+        let batch_score = batch_scores[doc_idx];
+
+        assert!(
+            (individual_score - batch_score).abs() < 1e-5,
+            "Doc {}: Batch score {} should equal individual score {}",
+            doc_idx,
+            batch_score,
+            individual_score
+        );
+
+        // Verify alignment consistency
+        let alignments = simd::maxsim_alignments_vecs(&query, doc);
+        let alignment_sum: f32 = alignments.iter().map(|(_, _, s)| s).sum();
+        assert!(
+            (alignment_sum - individual_score).abs() < 1e-4,
+            "Doc {}: Alignment sum should equal MaxSim",
+            doc_idx
+        );
+    }
+}
+
+#[test]
+fn e2e_alignment_with_weighted_maxsim() {
+    const DIM: usize = 64;
+
+    let query = mock_token_embed("important query terms", DIM);
+    let doc = mock_token_embed("document with matching terms", DIM);
+
+    let q_refs: Vec<&[f32]> = query.iter().map(|t| t.as_slice()).collect();
+    let d_refs: Vec<&[f32]> = doc.iter().map(|t| t.as_slice()).collect();
+
+    // Unweighted
+    let unweighted_score = simd::maxsim(&q_refs, &d_refs);
+    let unweighted_alignments = simd::maxsim_alignments(&q_refs, &d_refs);
+
+    // Weighted (all weights = 1.0 should equal unweighted)
+    let unit_weights: Vec<f32> = vec![1.0; query.len()];
+    let weighted_score = simd::maxsim_weighted(&q_refs, &d_refs, &unit_weights);
+
+    assert!(
+        (unweighted_score - weighted_score).abs() < 1e-5,
+        "Unit weights should equal unweighted"
+    );
+
+    // Verify alignment sum still equals unweighted MaxSim
+    let alignment_sum: f32 = unweighted_alignments.iter().map(|(_, _, s)| s).sum();
+    assert!(
+        (alignment_sum - unweighted_score).abs() < 1e-4,
+        "Alignment sum should equal MaxSim even with weighted scoring"
+    );
+}
+
+#[test]
+fn e2e_highlighting_threshold_sensitivity() {
+    const DIM: usize = 64;
+
+    let query = mock_token_embed("test", DIM);
+    let doc = mock_token_embed("test document with matching content", DIM);
+
+    // Test different thresholds
+    let thresholds = vec![0.0, 0.3, 0.5, 0.7, 0.9, 1.5];
+    let mut prev_count = doc.len();
+
+    for threshold in thresholds {
+        let highlighted = simd::highlight_matches_vecs(&query, &doc, threshold);
+        assert!(
+            highlighted.len() <= prev_count,
+            "Higher threshold {} should return fewer or equal matches than {}",
+            threshold,
+            prev_count
+        );
+        prev_count = highlighted.len();
+
+        // All indices should be valid
+        assert!(
+            highlighted.iter().all(|&idx| idx < doc.len()),
+            "All highlighted indices should be valid at threshold {}",
+            threshold
+        );
+    }
+}
+
+#[test]
+fn e2e_alignment_cosine_vs_dot() {
+    const DIM: usize = 64;
+
+    let query = mock_token_embed("query tokens", DIM);
+    let doc = mock_token_embed("document tokens", DIM);
+
+    // Dot product alignments
+    let dot_alignments = simd::maxsim_alignments_vecs(&query, &doc);
+    let dot_maxsim = simd::maxsim_vecs(&query, &doc);
+
+    // Cosine alignments
+    let q_refs: Vec<&[f32]> = query.iter().map(|t| t.as_slice()).collect();
+    let d_refs: Vec<&[f32]> = doc.iter().map(|t| t.as_slice()).collect();
+    let cosine_alignments = simd::maxsim_alignments_cosine(&q_refs, &d_refs);
+    let cosine_maxsim = simd::maxsim_cosine_vecs(&query, &doc);
+
+    // Both should have same count
+    assert_eq!(
+        dot_alignments.len(),
+        cosine_alignments.len(),
+        "Should have same number of alignments"
+    );
+
+    // Both should sum to their respective MaxSim scores
+    let dot_sum: f32 = dot_alignments.iter().map(|(_, _, s)| s).sum();
+    let cosine_sum: f32 = cosine_alignments.iter().map(|(_, _, s)| s).sum();
+
+    assert!(
+        (dot_sum - dot_maxsim).abs() < 1e-4,
+        "Dot alignment sum should equal dot MaxSim"
+    );
+    assert!(
+        (cosine_sum - cosine_maxsim).abs() < 1e-4,
+        "Cosine alignment sum should equal cosine MaxSim"
+    );
+} raw_scores.iter().enumerate() {
+            if !top2.contains(&other_idx) {
+                assert!(
+                    raw_scores[idx] >= other_score,
+                    "Top-k index {} (score {}) should have score >= {} (idx {})",
+                    idx,
+                    raw_scores[idx],
+                    other_score,
+                    other_idx
+                );
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // E2E Test: Weighted MaxSim Pipeline
 // ─────────────────────────────────────────────────────────────────────────────
 
