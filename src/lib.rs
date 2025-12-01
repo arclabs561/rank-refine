@@ -56,15 +56,17 @@ pub mod prelude {
 
     // Token alignment and highlighting (ColBERT interpretability)
     pub use crate::simd::{
-        alignments_for_doc_tokens, alignments_for_query_tokens, alignment_stats,
-        filter_alignments, highlight_matches, highlight_matches_batch, highlight_matches_vecs,
-        maxsim_alignments, maxsim_alignments_batch, maxsim_alignments_cosine,
-        maxsim_alignments_cosine_batch, maxsim_alignments_cosine_vecs, maxsim_alignments_vecs,
-        top_k_alignments,
+        alignment_stats, alignments_for_doc_tokens, alignments_for_query_tokens, filter_alignments,
+        highlight_matches, highlight_matches_batch, highlight_matches_vecs, maxsim_alignments,
+        maxsim_alignments_batch, maxsim_alignments_cosine, maxsim_alignments_cosine_batch,
+        maxsim_alignments_cosine_vecs, maxsim_alignments_vecs, top_k_alignments,
     };
 
     // `ColBERT`
-    pub use crate::colbert::{alignments as colbert_alignments, highlight as colbert_highlight, pool_tokens, rank as colbert_rank};
+    pub use crate::colbert::{
+        alignments as colbert_alignments, highlight as colbert_highlight, pool_tokens,
+        rank as colbert_rank,
+    };
 
     // Diversity
     pub use crate::diversity::{dpp, mmr, DppConfig, MmrConfig};

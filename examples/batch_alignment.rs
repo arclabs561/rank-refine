@@ -11,25 +11,25 @@ fn main() {
 
     // Query: "rust memory safety" (3 tokens, 128-dim each)
     let query = vec![
-        vec![1.0, 0.0, 0.0, 0.0],  // "rust" token
-        vec![0.0, 1.0, 0.0, 0.0],  // "memory" token
-        vec![0.0, 0.0, 1.0, 0.0],  // "safety" token
+        vec![1.0, 0.0, 0.0, 0.0], // "rust" token
+        vec![0.0, 1.0, 0.0, 0.0], // "memory" token
+        vec![0.0, 0.0, 1.0, 0.0], // "safety" token
     ];
 
     // Documents to rerank (simplified for demo)
     let documents = vec![
         vec![
-            vec![0.9, 0.1, 0.0, 0.0],  // "rust" token
-            vec![0.1, 0.9, 0.0, 0.0],  // "memory" token
-            vec![0.0, 0.0, 0.9, 0.1],  // "safety" token
+            vec![0.9, 0.1, 0.0, 0.0], // "rust" token
+            vec![0.1, 0.9, 0.0, 0.0], // "memory" token
+            vec![0.0, 0.0, 0.9, 0.1], // "safety" token
         ],
         vec![
-            vec![0.5, 0.5, 0.0, 0.0],  // "programming" token
-            vec![0.0, 0.5, 0.5, 0.0],  // "language" token
+            vec![0.5, 0.5, 0.0, 0.0], // "programming" token
+            vec![0.0, 0.5, 0.5, 0.0], // "language" token
         ],
         vec![
-            vec![0.9, 0.1, 0.0, 0.0],  // "rust" token
-            vec![0.0, 0.0, 0.0, 0.0],  // filler
+            vec![0.9, 0.1, 0.0, 0.0], // "rust" token
+            vec![0.0, 0.0, 0.0, 0.0], // filler
         ],
     ];
 
@@ -73,12 +73,18 @@ fn main() {
 
         // Filter by threshold
         let filtered = filter_alignments(alignments, 0.8);
-        println!("  Doc {} high-quality (>=0.8): {} alignments", doc_idx, filtered.len());
+        println!(
+            "  Doc {} high-quality (>=0.8): {} alignments",
+            doc_idx,
+            filtered.len()
+        );
 
         // Statistics
         let (min, max, mean, sum, count) = alignment_stats(alignments);
-        println!("  Doc {} stats: min={:.3}, max={:.3}, mean={:.3}, sum={:.3}, count={}",
-                 doc_idx, min, max, mean, sum, count);
+        println!(
+            "  Doc {} stats: min={:.3}, max={:.3}, mean={:.3}, sum={:.3}, count={}",
+            doc_idx, min, max, mean, sum, count
+        );
     }
 
     // 5. Verify consistency: alignment sum equals MaxSim
@@ -91,10 +97,11 @@ fn main() {
             "Doc {}: Alignment sum should equal MaxSim",
             doc_idx
         );
-        println!("  Doc {}: ✓ Alignment sum ({:.3}) = MaxSim ({:.3})",
-                 doc_idx, alignment_sum, maxsim_score);
+        println!(
+            "  Doc {}: ✓ Alignment sum ({:.3}) = MaxSim ({:.3})",
+            doc_idx, alignment_sum, maxsim_score
+        );
     }
 
     println!("\n✓ Batch alignment functions work correctly!");
 }
-

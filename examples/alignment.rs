@@ -9,23 +9,26 @@ use rank_refine::simd::maxsim_vecs;
 fn main() {
     // Query: "capital of France" (simplified to 2 tokens for demo)
     let query = vec![
-        vec![1.0, 0.0, 0.0],  // "capital" token
-        vec![0.0, 1.0, 0.0],  // "France" token
+        vec![1.0, 0.0, 0.0], // "capital" token
+        vec![0.0, 1.0, 0.0], // "France" token
     ];
 
     // Document: "Paris is the capital of France" (simplified to 4 tokens)
     let doc = vec![
-        vec![0.1, 0.1, 0.8],  // "Paris" token
-        vec![0.2, 0.2, 0.6],  // "is" token
-        vec![0.9, 0.1, 0.0],  // "capital" token (matches query[0])
-        vec![0.1, 0.9, 0.0],  // "France" token (matches query[1])
+        vec![0.1, 0.1, 0.8], // "Paris" token
+        vec![0.2, 0.2, 0.6], // "is" token
+        vec![0.9, 0.1, 0.0], // "capital" token (matches query[0])
+        vec![0.1, 0.9, 0.0], // "France" token (matches query[1])
     ];
 
     // Get token-level alignments
     let alignments = maxsim_alignments_vecs(&query, &doc);
     println!("Token alignments:");
     for (q_idx, d_idx, score) in &alignments {
-        println!("  Query token {} → Doc token {} (similarity: {:.3})", q_idx, d_idx, score);
+        println!(
+            "  Query token {} → Doc token {} (similarity: {:.3})",
+            q_idx, d_idx, score
+        );
     }
 
     // Extract highlighted tokens (above threshold)
@@ -40,4 +43,3 @@ fn main() {
     println!("Sum of alignment scores: {:.3}", alignment_sum);
     assert!((maxsim_score - alignment_sum).abs() < 1e-5, "Should match!");
 }
-

@@ -669,10 +669,7 @@ pub fn highlight_matches_batch(
 /// assert!(top2[0].2 >= top2[1].2); // Sorted by score
 /// ```
 #[must_use]
-pub fn top_k_alignments(
-    alignments: &[(usize, usize, f32)],
-    k: usize,
-) -> Vec<(usize, usize, f32)> {
+pub fn top_k_alignments(alignments: &[(usize, usize, f32)], k: usize) -> Vec<(usize, usize, f32)> {
     if k == 0 || alignments.is_empty() {
         return Vec::new();
     }
@@ -804,21 +801,13 @@ pub fn alignments_for_doc_tokens(
 /// println!("Min: {}, Max: {}, Mean: {}, Sum: {}, Count: {}", min, max, mean, sum, count);
 /// ```
 #[must_use]
-pub fn alignment_stats(
-    alignments: &[(usize, usize, f32)],
-) -> (f32, f32, f32, f32, usize) {
+pub fn alignment_stats(alignments: &[(usize, usize, f32)]) -> (f32, f32, f32, f32, usize) {
     if alignments.is_empty() {
         return (0.0, 0.0, 0.0, 0.0, 0);
     }
     let scores: Vec<f32> = alignments.iter().map(|(_, _, s)| *s).collect();
-    let min = scores
-        .iter()
-        .copied()
-        .fold(f32::INFINITY, f32::min);
-    let max = scores
-        .iter()
-        .copied()
-        .fold(f32::NEG_INFINITY, f32::max);
+    let min = scores.iter().copied().fold(f32::INFINITY, f32::min);
+    let max = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
     let sum: f32 = scores.iter().sum();
     let count = scores.len();
     let mean = sum / count as f32;
@@ -886,14 +875,8 @@ pub fn idf_weights(token_doc_freqs: &[usize], total_docs: usize) -> Vec<f32> {
         .collect();
 
     // Normalize to [0, 1] range
-    let min_idf = idf_scores
-        .iter()
-        .copied()
-        .fold(f32::INFINITY, f32::min);
-    let max_idf = idf_scores
-        .iter()
-        .copied()
-        .fold(f32::NEG_INFINITY, f32::max);
+    let min_idf = idf_scores.iter().copied().fold(f32::INFINITY, f32::min);
+    let max_idf = idf_scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
 
     if (max_idf - min_idf).abs() < 1e-9 {
         // All tokens have same IDF - return uniform weights
@@ -985,10 +968,7 @@ pub fn bm25_weights(
     }
 
     // Normalize to [0, 1]
-    let min_score = bm25_scores
-        .iter()
-        .copied()
-        .fold(f32::INFINITY, f32::min);
+    let min_score = bm25_scores.iter().copied().fold(f32::INFINITY, f32::min);
     let max_score = bm25_scores
         .iter()
         .copied()
@@ -1718,7 +1698,10 @@ mod tests {
         // Token that never appears should get maximum weight
         let weights = idf_weights(&[0, 100], 1000);
         assert_eq!(weights.len(), 2);
-        assert!(weights[0] > weights[1], "Zero doc freq should get higher weight");
+        assert!(
+            weights[0] > weights[1],
+            "Zero doc freq should get higher weight"
+        );
     }
 
     #[test]
@@ -1728,7 +1711,10 @@ mod tests {
         assert_eq!(weights.len(), 3);
         assert!((weights[0] - weights[1]).abs() < 1e-5);
         assert!((weights[1] - weights[2]).abs() < 1e-5);
-        assert!((weights[0] - 1.0).abs() < 1e-5, "Uniform weights should be 1.0");
+        assert!(
+            (weights[0] - 1.0).abs() < 1e-5,
+            "Uniform weights should be 1.0"
+        );
     }
 
     #[test]
@@ -1793,7 +1779,10 @@ mod tests {
         // Token with higher query frequency should get higher weight
         let weights = bm25_weights(&[100, 100], &[1, 3], 1000, 1.5);
         assert_eq!(weights.len(), 2);
-        assert!(weights[1] > weights[0], "Higher tf should give higher weight");
+        assert!(
+            weights[1] > weights[0],
+            "Higher tf should give higher weight"
+        );
     }
 
     #[test]
@@ -1837,16 +1826,16 @@ mod tests {
     fn patches_to_regions_valid() {
         let regions = patches_to_regions(&[0, 1, 32, 33], 1024, 768, 32);
         assert_eq!(regions.len(), 4);
-        
+
         // Patch 0: row 0, col 0
         assert_eq!(regions[0], (0, 0, 32, 24));
-        
+
         // Patch 1: row 0, col 1
         assert_eq!(regions[1], (32, 0, 32, 24));
-        
+
         // Patch 32: row 1, col 0
         assert_eq!(regions[2], (0, 24, 32, 24));
-        
+
         // Patch 33: row 1, col 1
         assert_eq!(regions[3], (32, 24, 32, 24));
     }
@@ -1885,15 +1874,19 @@ mod tests {
         let snippet = extract_snippet_indices(&alignments, 2, 100);
         // Should include: 5 (match), 3, 4 (before), 6, 7 (after)
         assert!(snippet.contains(&5), "Should include matched token");
-        assert!(snippet.contains(&3) || snippet.contains(&4), "Should include context before");
-        assert!(snippet.contains(&6) || snippet.contains(&7), "Should include context after");
+        assert!(
+            snippet.contains(&3) || snippet.contains(&4),
+            "Should include context before"
+        );
+        assert!(
+            snippet.contains(&6) || snippet.contains(&7),
+            "Should include context after"
+        );
     }
 
     #[test]
     fn extract_snippet_indices_max_tokens_limit() {
-        let alignments: Vec<(usize, usize, f32)> = (0..100)
-            .map(|i| (0, i, 0.9))
-            .collect();
+        let alignments: Vec<(usize, usize, f32)> = (0..100).map(|i| (0, i, 0.9)).collect();
         let snippet = extract_snippet_indices(&alignments, 2, 10);
         assert_eq!(snippet.len(), 10, "Should respect max_tokens limit");
     }
@@ -1914,7 +1907,10 @@ mod tests {
         let snippet = extract_snippet_indices(&alignments, 5, 100);
         // Should not panic, and should only include valid indices
         // Note: usize is always >= 0, so this is just a sanity check
-        assert!(!snippet.is_empty() || snippet.iter().all(|&idx| idx < 1000), "Indices should be reasonable");
+        assert!(
+            !snippet.is_empty() || snippet.iter().all(|&idx| idx < 1000),
+            "Indices should be reasonable"
+        );
     }
 
     #[test]

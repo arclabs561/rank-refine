@@ -581,10 +581,7 @@ pub fn refine_with_config<I: Clone + Eq + std::hash::Hash>(
 /// // Shows which query tokens match which doc tokens
 /// ```
 #[must_use]
-pub fn alignments(
-    query: &[Vec<f32>],
-    doc: &[Vec<f32>],
-) -> Vec<(usize, usize, f32)> {
+pub fn alignments(query: &[Vec<f32>], doc: &[Vec<f32>]) -> Vec<(usize, usize, f32)> {
     simd::maxsim_alignments_vecs(query, doc)
 }
 

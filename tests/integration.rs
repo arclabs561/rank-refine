@@ -769,7 +769,9 @@ fn e2e_multimodal_alignment_pipeline() {
         "Should have at least some highlighted patches"
     );
     assert!(
-        highlighted_patches.iter().all(|&idx| idx < patch_embeddings.len()),
+        highlighted_patches
+            .iter()
+            .all(|&idx| idx < patch_embeddings.len()),
         "All highlighted patch indices should be valid"
     );
 }
@@ -1007,8 +1009,14 @@ fn e2e_alignment_utility_functions() {
     let all_scores: Vec<f32> = alignments.iter().map(|(_, _, s)| *s).collect();
     let mut sorted_scores = all_scores.clone();
     sorted_scores.sort_by(|a, b| b.partial_cmp(a).unwrap());
-    assert_eq!(top2[0].2, sorted_scores[0], "Top alignment should be highest");
-    assert_eq!(top2[1].2, sorted_scores[1], "Second should be second highest");
+    assert_eq!(
+        top2[0].2, sorted_scores[0],
+        "Top alignment should be highest"
+    );
+    assert_eq!(
+        top2[1].2, sorted_scores[1],
+        "Second should be second highest"
+    );
 
     // Filter alignments
     let min_score = 0.5;
@@ -1027,7 +1035,9 @@ fn e2e_alignment_utility_functions() {
     let query_indices: HashSet<usize> = [0, 2].iter().copied().collect();
     let query_filtered = simd::alignments_for_query_tokens(&alignments, &query_indices);
     assert!(
-        query_filtered.iter().all(|(q_idx, _, _)| query_indices.contains(q_idx)),
+        query_filtered
+            .iter()
+            .all(|(q_idx, _, _)| query_indices.contains(q_idx)),
         "All should be for specified query tokens"
     );
 
@@ -1035,7 +1045,9 @@ fn e2e_alignment_utility_functions() {
     let doc_indices: HashSet<usize> = [0, 1].iter().copied().collect();
     let doc_filtered = simd::alignments_for_doc_tokens(&alignments, &doc_indices);
     assert!(
-        doc_filtered.iter().all(|(_, d_idx, _)| doc_indices.contains(d_idx)),
+        doc_filtered
+            .iter()
+            .all(|(_, d_idx, _)| doc_indices.contains(d_idx)),
         "All should be for specified doc tokens"
     );
 
@@ -1082,7 +1094,12 @@ fn e2e_batch_alignment_with_utilities() {
 
         // Statistics
         let (_min, _max, _mean, sum, count) = simd::alignment_stats(alignments);
-        assert_eq!(count, alignments.len(), "Doc {}: Count should match", doc_idx);
+        assert_eq!(
+            count,
+            alignments.len(),
+            "Doc {}: Count should match",
+            doc_idx
+        );
         assert!(
             (sum - alignments.iter().map(|(_, _, s)| s).sum::<f32>()).abs() < 1e-4,
             "Doc {}: Sum should match",
@@ -1423,7 +1440,10 @@ fn e2e_patches_to_regions_edge_cases() {
     let regions = patches_to_regions(&[0, 1, 32, 33, 1023], 1024, 768, 32);
     assert_eq!(regions.len(), 5);
     for (x, y, _w, _h) in &regions {
-        assert!(*x < 1024 && *y < 768, "Regions should be within image bounds");
+        assert!(
+            *x < 1024 && *y < 768,
+            "Regions should be within image bounds"
+        );
     }
 }
 
