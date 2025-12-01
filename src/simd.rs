@@ -332,7 +332,7 @@ pub fn highlight_matches(
 ///
 /// **Use cases**:
 /// - **IDF weighting**: Boost rare terms, de-emphasize common terms
-/// - **[MASK] token weighting**: ColBERT uses [MASK] tokens for query augmentation.
+/// - **\[MASK\] token weighting**: ColBERT uses \[MASK\] tokens for query augmentation.
 ///   These tokens are added during encoding and should be weighted lower (typically 0.2-0.4)
 ///   than original query tokens. See `examples/mask_token_weighting.rs` for a complete example.
 /// - **Learned importance**: Extract attention weights from trained models
