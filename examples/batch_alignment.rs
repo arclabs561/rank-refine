@@ -4,6 +4,7 @@
 //! when reranking candidate sets.
 
 use rank_refine::prelude::*;
+use rank_refine::simd::maxsim_batch;
 
 fn main() {
     println!("Batch Alignment Example\n");
