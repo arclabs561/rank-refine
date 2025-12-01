@@ -1110,7 +1110,7 @@ pub fn extract_snippet_indices(
         // Add context tokens after
         // Note: We don't know doc length, so we'll add indices and filter later
         for i in 1..=context_window {
-            indices.insert(doc_idx + i);
+            indices.insert(doc_idx.saturating_add(i));
         }
     }
 

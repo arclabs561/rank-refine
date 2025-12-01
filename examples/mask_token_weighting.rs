@@ -8,7 +8,7 @@
 //! and their learned importance weights.
 
 use rank_refine::prelude::*;
-use rank_refine::simd::maxsim_weighted_vecs;
+use rank_refine::simd::{maxsim_vecs, maxsim_weighted_vecs};
 
 fn main() {
     println!("[MASK] Token Weighting Example\n");
@@ -89,7 +89,7 @@ fn main() {
     let alignments = maxsim_alignments_vecs(&query_with_masks, &doc);
     println!("\nToken alignments:");
     for (q_idx, d_idx, score) in &alignments {
-        let token_type = if q_idx < original_query.len() {
+        let token_type = if *q_idx < original_query.len() {
             "original"
         } else {
             "[MASK]"

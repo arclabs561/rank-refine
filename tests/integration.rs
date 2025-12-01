@@ -1081,7 +1081,7 @@ fn e2e_batch_alignment_with_utilities() {
         );
 
         // Statistics
-        let (min, max, mean, sum, count) = simd::alignment_stats(alignments);
+        let (min, max, _mean, sum, count) = simd::alignment_stats(alignments);
         assert_eq!(count, alignments.len(), "Doc {}: Count should match", doc_idx);
         assert!(
             (sum - alignments.iter().map(|(_, _, s)| s).sum::<f32>()).abs() < 1e-4,
