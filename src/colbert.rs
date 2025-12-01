@@ -130,9 +130,19 @@ use crate::{simd, RefineConfig};
 ///
 /// * `tokens` - Document token embeddings (assumed L2-normalized for ``ColBERT``)
 /// * `pool_factor` - Target compression ratio (2 = 50% reduction, 3 = 66%, etc.)
+///
+/// # Panics
+///
+/// Panics if `pool_factor == 0` (would cause division by zero).
 #[must_use]
 pub fn pool_tokens(tokens: &[Vec<f32>], pool_factor: usize) -> Vec<Vec<f32>> {
-    if tokens.is_empty() || pool_factor <= 1 {
+    if tokens.is_empty() {
+        return tokens.to_vec();
+    }
+    if pool_factor == 0 {
+        panic!("pool_factor must be >= 1, got 0 (would cause division by zero)");
+    }
+    if pool_factor == 1 {
         return tokens.to_vec();
     }
 
@@ -295,7 +305,13 @@ fn cut_dendrogram(
 /// where adjacent tokens are likely semantically related.
 #[must_use]
 pub fn pool_tokens_sequential(tokens: &[Vec<f32>], window_size: usize) -> Vec<Vec<f32>> {
-    if tokens.is_empty() || window_size <= 1 {
+    if tokens.is_empty() {
+        return tokens.to_vec();
+    }
+    if window_size == 0 {
+        panic!("window_size must be >= 1, got 0 (would cause division by zero)");
+    }
+    if window_size == 1 {
         return tokens.to_vec();
     }
 
@@ -328,7 +344,13 @@ pub fn pool_tokens_with_protected(
     pool_factor: usize,
     protected_count: usize,
 ) -> Vec<Vec<f32>> {
-    if tokens.is_empty() || pool_factor <= 1 {
+    if tokens.is_empty() {
+        return tokens.to_vec();
+    }
+    if pool_factor == 0 {
+        panic!("pool_factor must be >= 1, got 0 (would cause division by zero)");
+    }
+    if pool_factor == 1 {
         return tokens.to_vec();
     }
 
@@ -371,7 +393,13 @@ pub fn pool_tokens_with_protected(
 /// ```
 #[must_use]
 pub fn pool_tokens_adaptive(tokens: &[Vec<f32>], pool_factor: usize) -> Vec<Vec<f32>> {
-    if tokens.is_empty() || pool_factor <= 1 {
+    if tokens.is_empty() {
+        return tokens.to_vec();
+    }
+    if pool_factor == 0 {
+        panic!("pool_factor must be >= 1, got 0 (would cause division by zero)");
+    }
+    if pool_factor == 1 {
         return tokens.to_vec();
     }
 
@@ -887,6 +915,34 @@ mod tests {
         let tokens: Vec<Vec<f32>> = vec![];
         let pooled = pool_tokens_adaptive(&tokens, 2);
         assert!(pooled.is_empty());
+    }
+
+    #[test]
+    #[should_panic(expected = "pool_factor must be >= 1")]
+    fn test_pool_factor_zero_panics() {
+        let tokens = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+        let _ = pool_tokens(&tokens, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "window_size must be >= 1")]
+    fn test_pool_tokens_sequential_window_zero_panics() {
+        let tokens = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+        let _ = pool_tokens_sequential(&tokens, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "pool_factor must be >= 1")]
+    fn test_pool_tokens_adaptive_factor_zero_panics() {
+        let tokens = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+        let _ = pool_tokens_adaptive(&tokens, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "pool_factor must be >= 1")]
+    fn test_pool_tokens_with_protected_factor_zero_panics() {
+        let tokens = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+        let _ = pool_tokens_with_protected(&tokens, 0, 0);
     }
 
     #[test]

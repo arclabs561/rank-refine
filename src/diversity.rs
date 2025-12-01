@@ -189,8 +189,10 @@ pub fn try_mmr<I: Clone>(
         .fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), s| {
             (lo.min(s), hi.max(s))
         });
+    // Use same epsilon as simd module for consistency
+    const REL_RANGE_EPSILON: f32 = 1e-9;
     let rel_range = rel_max - rel_min;
-    let rel_norm: Vec<f32> = if rel_range > 1e-9 {
+    let rel_norm: Vec<f32> = if rel_range > REL_RANGE_EPSILON {
         candidates
             .iter()
             .map(|(_, s)| (s - rel_min) / rel_range)

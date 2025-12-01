@@ -252,6 +252,41 @@ fn bench_dpp(c: &mut Criterion) {
     g.finish();
 }
 
+fn bench_edge_cases(c: &mut Criterion) {
+    let mut g = c.benchmark_group("edge_cases");
+
+    // Zero-norm vectors
+    let zero_vec = vec![0.0; 128];
+    let normal_vec = random_vec(128, 1);
+    g.bench_function("cosine_zero_norm", |bench| {
+        bench.iter(|| black_box(simd::cosine(&zero_vec, &normal_vec)));
+    });
+
+    // Very small vectors (below SIMD threshold)
+    let small_a = random_vec(4, 1);
+    let small_b = random_vec(4, 2);
+    g.bench_function("dot_small_4dim", |bench| {
+        bench.iter(|| black_box(simd::dot(&small_a, &small_b)));
+    });
+
+    // MaxSim with single token
+    let single_query_vec = random_vec(128, 1);
+    let single_doc_vec = random_vec(128, 2);
+    let single_query: Vec<&[f32]> = vec![&single_query_vec[..]];
+    let single_doc: Vec<&[f32]> = vec![&single_doc_vec[..]];
+    g.bench_function("maxsim_single_token", |bench| {
+        bench.iter(|| black_box(simd::maxsim(&single_query, &single_doc)));
+    });
+
+    // Pooling edge cases
+    let tokens_2 = vec![random_vec(128, 1), random_vec(128, 2)];
+    g.bench_function("pool_tokens_factor_2_small", |bench| {
+        bench.iter(|| black_box(colbert::pool_tokens(&tokens_2, 2)));
+    });
+
+    g.finish();
+}
+
 criterion_group!(
     benches,
     bench_simd,
@@ -261,6 +296,7 @@ criterion_group!(
     bench_pool_tokens,
     bench_maxsim_pooled,
     bench_mmr,
-    bench_dpp
+    bench_dpp,
+    bench_edge_cases
 );
 criterion_main!(benches);
