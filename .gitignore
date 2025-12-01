@@ -3,3 +3,5 @@ Cargo.lock
 /mutants.out*
 /proptest-regressions
 OUTREACH.md
+/archive
+MISSING_FEATURES.md
