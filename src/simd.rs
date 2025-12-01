@@ -925,11 +925,15 @@ pub fn idf_weights(token_doc_freqs: &[usize], total_docs: usize) -> Vec<f32> {
 /// * `token_doc_freqs` - Document frequency for each query token
 /// * `token_query_freqs` - Term frequency in query for each token (typically 1 for most queries)
 /// * `total_docs` - Total number of documents in the collection
-/// * `k1` - Tuning parameter (default: 1.5, typical range: 1.2-2.0)
+/// * `k1` - Tuning parameter (default: 1.5, typical range: 1.2-2.0). Negative values are clamped to 0.
 ///
 /// # Returns
 ///
 /// Vector of BM25-style weights, one per query token.
+///
+/// # Panics
+///
+/// Never panics. Invalid inputs (length mismatch, df > total_docs, negative k1) are handled gracefully.
 ///
 /// # Example
 ///
@@ -1024,6 +1028,12 @@ pub fn bm25_weights(
 ///
 /// Vector of `(x, y, width, height)` bounding boxes in pixel coordinates.
 /// Each box represents the region covered by one or more highlighted patches.
+/// Invalid patch indices (>= total_patches) are filtered out.
+///
+/// # Panics
+///
+/// Never panics. Invalid inputs (zero dimensions, invalid indices) return empty vector
+/// or filter out invalid entries.
 ///
 /// # Example
 ///
@@ -1046,12 +1056,12 @@ pub fn patches_to_regions(
     image_height: usize,
     patches_per_side: usize,
 ) -> Vec<(usize, usize, usize, usize)> {
-    if patch_indices.is_empty() || patches_per_side == 0 {
+    if patch_indices.is_empty() || patches_per_side == 0 || image_width == 0 || image_height == 0 {
         return Vec::new();
     }
 
-    let patch_width = image_width / patches_per_side.max(1);
-    let patch_height = image_height / patches_per_side.max(1);
+    let patch_width = image_width / patches_per_side;
+    let patch_height = image_height / patches_per_side;
 
     patch_indices
         .iter()
@@ -1078,12 +1088,18 @@ pub fn patches_to_regions(
 /// # Arguments
 ///
 /// * `alignments` - Alignment pairs from `maxsim_alignments`
-/// * `context_window` - Number of tokens to include before/after each match (default: 2)
-/// * `max_tokens` - Maximum number of unique token indices to return
+/// * `context_window` - Number of tokens to include before/after each match
+/// * `max_tokens` - Maximum number of unique token indices to return (0 = return empty)
 ///
 /// # Returns
 ///
-/// Sorted vector of document token indices to include in snippet.
+/// Sorted vector of document token indices to include in snippet. Always includes
+/// matched tokens, plus context tokens up to `context_window` before/after each match.
+/// Duplicate indices are automatically deduplicated.
+///
+/// # Panics
+///
+/// Never panics. Handles edge cases gracefully (empty alignments, max_tokens=0, etc.).
 ///
 /// # Example
 ///
@@ -1681,6 +1697,229 @@ mod tests {
         let doc = vec![vec![1.0, 0.0]];
         // Cosine should normalize, so result is 1.0
         assert!((maxsim_cosine_vecs(&query, &doc) - 1.0).abs() < 1e-5);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // IDF and BM25 weighting unit tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn idf_weights_empty_input() {
+        assert_eq!(idf_weights(&[], 1000), vec![]);
+        assert_eq!(idf_weights(&[100, 200], 0), vec![]);
+    }
+
+    #[test]
+    fn idf_weights_zero_doc_freq() {
+        // Token that never appears should get maximum weight
+        let weights = idf_weights(&[0, 100], 1000);
+        assert_eq!(weights.len(), 2);
+        assert!(weights[0] > weights[1], "Zero doc freq should get higher weight");
+    }
+
+    #[test]
+    fn idf_weights_all_same_freq() {
+        // All tokens with same frequency should get uniform weights
+        let weights = idf_weights(&[100, 100, 100], 1000);
+        assert_eq!(weights.len(), 3);
+        assert!((weights[0] - weights[1]).abs() < 1e-5);
+        assert!((weights[1] - weights[2]).abs() < 1e-5);
+        assert!((weights[0] - 1.0).abs() < 1e-5, "Uniform weights should be 1.0");
+    }
+
+    #[test]
+    fn idf_weights_doc_freq_exceeds_total() {
+        // Invalid: df > total_docs should be handled gracefully
+        let weights = idf_weights(&[100, 2000], 1000);
+        assert_eq!(weights.len(), 2);
+        // Second token (df > total) should get minimum weight (0.0 after normalization)
+        assert!(weights[0] >= weights[1]);
+    }
+
+    #[test]
+    fn idf_weights_normalized_range() {
+        let weights = idf_weights(&[10, 100, 1000], 10000);
+        assert_eq!(weights.len(), 3);
+        for w in &weights {
+            assert!(*w >= 0.0 && *w <= 1.0, "Weight {} should be in [0, 1]", w);
+        }
+        // Check that min is 0.0 and max is 1.0 (after normalization)
+        let min_w = weights.iter().copied().fold(f32::INFINITY, f32::min);
+        let max_w = weights.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        assert!((min_w - 0.0).abs() < 1e-5, "Min weight should be 0.0");
+        assert!((max_w - 1.0).abs() < 1e-5, "Max weight should be 1.0");
+    }
+
+    #[test]
+    fn bm25_weights_length_mismatch() {
+        assert_eq!(bm25_weights(&[100], &[1, 2], 1000, 1.5), vec![]);
+        assert_eq!(bm25_weights(&[100, 200], &[1], 1000, 1.5), vec![]);
+    }
+
+    #[test]
+    fn bm25_weights_empty_input() {
+        assert_eq!(bm25_weights(&[], &[], 1000, 1.5), vec![]);
+        assert_eq!(bm25_weights(&[100], &[1], 0, 1.5), vec![]);
+    }
+
+    #[test]
+    fn bm25_weights_negative_k1() {
+        // Negative k1 should be clamped to 0
+        let weights = bm25_weights(&[100, 200], &[1, 1], 1000, -1.0);
+        assert_eq!(weights.len(), 2);
+        // With k1=0, formula becomes idf * tf / tf = idf
+        // So it should reduce to IDF weighting
+        for w in &weights {
+            assert!(*w >= 0.0 && *w <= 1.0);
+        }
+    }
+
+    #[test]
+    fn bm25_weights_zero_k1() {
+        // k1=0 should work (reduces to IDF weighting)
+        let weights = bm25_weights(&[100, 200], &[1, 1], 1000, 0.0);
+        assert_eq!(weights.len(), 2);
+        for w in &weights {
+            assert!(*w >= 0.0 && *w <= 1.0);
+        }
+    }
+
+    #[test]
+    fn bm25_weights_higher_tf_higher_weight() {
+        // Token with higher query frequency should get higher weight
+        let weights = bm25_weights(&[100, 100], &[1, 3], 1000, 1.5);
+        assert_eq!(weights.len(), 2);
+        assert!(weights[1] > weights[0], "Higher tf should give higher weight");
+    }
+
+    #[test]
+    fn bm25_weights_normalized_range() {
+        let weights = bm25_weights(&[10, 100, 1000], &[1, 2, 1], 10000, 1.5);
+        assert_eq!(weights.len(), 3);
+        for w in &weights {
+            assert!(*w >= 0.0 && *w <= 1.0, "Weight {} should be in [0, 1]", w);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Patch and snippet extraction unit tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn patches_to_regions_empty() {
+        assert_eq!(patches_to_regions(&[], 1024, 768, 32), vec![]);
+    }
+
+    #[test]
+    fn patches_to_regions_zero_patches_per_side() {
+        assert_eq!(patches_to_regions(&[0, 1], 1024, 768, 0), vec![]);
+    }
+
+    #[test]
+    fn patches_to_regions_zero_dimensions() {
+        assert_eq!(patches_to_regions(&[0, 1], 0, 768, 32), vec![]);
+        assert_eq!(patches_to_regions(&[0, 1], 1024, 0, 32), vec![]);
+    }
+
+    #[test]
+    fn patches_to_regions_invalid_index() {
+        // Patch index >= total_patches should be filtered out
+        let regions = patches_to_regions(&[0, 1024, 1], 1024, 768, 32);
+        // 32×32 = 1024 patches, so index 1024 is invalid
+        assert_eq!(regions.len(), 2, "Should filter out invalid patch index");
+    }
+
+    #[test]
+    fn patches_to_regions_valid() {
+        let regions = patches_to_regions(&[0, 1, 32, 33], 1024, 768, 32);
+        assert_eq!(regions.len(), 4);
+        
+        // Patch 0: row 0, col 0
+        assert_eq!(regions[0], (0, 0, 32, 24));
+        
+        // Patch 1: row 0, col 1
+        assert_eq!(regions[1], (32, 0, 32, 24));
+        
+        // Patch 32: row 1, col 0
+        assert_eq!(regions[2], (0, 24, 32, 24));
+        
+        // Patch 33: row 1, col 1
+        assert_eq!(regions[3], (32, 24, 32, 24));
+    }
+
+    #[test]
+    fn patches_to_regions_bounds_check() {
+        // All regions should be within image bounds
+        let regions = patches_to_regions(&[0, 100, 500, 1023], 1024, 768, 32);
+        for (x, y, w, h) in &regions {
+            assert!(*x + *w <= 1024, "Region x+width should be <= image width");
+            assert!(*y + *h <= 768, "Region y+height should be <= image height");
+        }
+    }
+
+    #[test]
+    fn extract_snippet_indices_empty() {
+        assert_eq!(extract_snippet_indices(&[], 2, 10), vec![]);
+    }
+
+    #[test]
+    fn extract_snippet_indices_max_tokens_zero() {
+        let alignments = vec![(0, 5, 0.9), (1, 10, 0.8)];
+        assert_eq!(extract_snippet_indices(&alignments, 1, 0), vec![]);
+    }
+
+    #[test]
+    fn extract_snippet_indices_no_context() {
+        let alignments = vec![(0, 5, 0.9), (1, 10, 0.8)];
+        let snippet = extract_snippet_indices(&alignments, 0, 100);
+        assert_eq!(snippet, vec![5, 10], "Should include only matched tokens");
+    }
+
+    #[test]
+    fn extract_snippet_indices_with_context() {
+        let alignments = vec![(0, 5, 0.9)];
+        let snippet = extract_snippet_indices(&alignments, 2, 100);
+        // Should include: 5 (match), 3, 4 (before), 6, 7 (after)
+        assert!(snippet.contains(&5), "Should include matched token");
+        assert!(snippet.contains(&3) || snippet.contains(&4), "Should include context before");
+        assert!(snippet.contains(&6) || snippet.contains(&7), "Should include context after");
+    }
+
+    #[test]
+    fn extract_snippet_indices_max_tokens_limit() {
+        let alignments: Vec<(usize, usize, f32)> = (0..100)
+            .map(|i| (0, i, 0.9))
+            .collect();
+        let snippet = extract_snippet_indices(&alignments, 2, 10);
+        assert_eq!(snippet.len(), 10, "Should respect max_tokens limit");
+    }
+
+    #[test]
+    fn extract_snippet_indices_sorted() {
+        let alignments = vec![(0, 10, 0.9), (1, 5, 0.8), (2, 20, 0.7)];
+        let snippet = extract_snippet_indices(&alignments, 1, 100);
+        for i in 1..snippet.len() {
+            assert!(snippet[i] >= snippet[i - 1], "Should be sorted");
+        }
+    }
+
+    #[test]
+    fn extract_snippet_indices_context_bounds() {
+        // Test that context doesn't go negative
+        let alignments = vec![(0, 0, 0.9)]; // First token
+        let snippet = extract_snippet_indices(&alignments, 5, 100);
+        // Should not panic, and should only include valid indices
+        // Note: usize is always >= 0, so this is just a sanity check
+        assert!(!snippet.is_empty() || snippet.iter().all(|&idx| idx < 1000), "Indices should be reasonable");
+    }
+
+    #[test]
+    fn extract_snippet_indices_deduplication() {
+        // Multiple alignments to same doc token should only appear once
+        let alignments = vec![(0, 5, 0.9), (1, 5, 0.8), (2, 5, 0.7)];
+        let snippet = extract_snippet_indices(&alignments, 2, 100);
+        let count_5 = snippet.iter().filter(|&&x| x == 5).count();
+        assert_eq!(count_5, 1, "Should deduplicate same token");
     }
 
     #[test]

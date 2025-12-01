@@ -1081,7 +1081,7 @@ fn e2e_batch_alignment_with_utilities() {
         );
 
         // Statistics
-        let (min, max, _mean, sum, count) = simd::alignment_stats(alignments);
+        let (_min, _max, _mean, sum, count) = simd::alignment_stats(alignments);
         assert_eq!(count, alignments.len(), "Doc {}: Count should match", doc_idx);
         assert!(
             (sum - alignments.iter().map(|(_, _, s)| s).sum::<f32>()).abs() < 1e-4,
@@ -1346,4 +1346,109 @@ fn e2e_batch_operations() {
     // Top-k from batch
     let top2 = simd::top_k_indices(&batch_scores, 2);
     assert_eq!(top2.len(), 2);
+}
+
+#[test]
+fn e2e_idf_edge_cases() {
+    use rank_refine::simd::idf_weights;
+
+    // Zero total docs
+    assert_eq!(idf_weights(&[100], 0), vec![]);
+
+    // Empty doc freqs
+    assert_eq!(idf_weights(&[], 1000), vec![]);
+
+    // All tokens never appear
+    let weights = idf_weights(&[0, 0, 0], 1000);
+    assert_eq!(weights.len(), 3);
+    // All should have same weight (all are max importance)
+    assert!((weights[0] - weights[1]).abs() < 1e-5);
+    assert!((weights[1] - weights[2]).abs() < 1e-5);
+
+    // Doc freq exceeds total (invalid input)
+    let weights = idf_weights(&[100, 2000], 1000);
+    assert_eq!(weights.len(), 2);
+    // Second should get minimum weight
+    assert!(weights[0] >= weights[1]);
+}
+
+#[test]
+fn e2e_bm25_edge_cases() {
+    use rank_refine::simd::bm25_weights;
+
+    // Length mismatch
+    assert_eq!(bm25_weights(&[100], &[1, 2], 1000, 1.5), vec![]);
+
+    // Zero total docs
+    assert_eq!(bm25_weights(&[100], &[1], 0, 1.5), vec![]);
+
+    // Negative k1 (should be clamped)
+    let weights = bm25_weights(&[100, 200], &[1, 1], 1000, -1.0);
+    assert_eq!(weights.len(), 2);
+
+    // Zero k1
+    let weights = bm25_weights(&[100, 200], &[1, 1], 1000, 0.0);
+    assert_eq!(weights.len(), 2);
+    for w in &weights {
+        assert!(*w >= 0.0 && *w <= 1.0);
+    }
+
+    // Zero query frequency
+    let weights = bm25_weights(&[100, 200], &[0, 1], 1000, 1.5);
+    assert_eq!(weights.len(), 2);
+    // First token with tf=0 should get lower weight
+    assert!(weights[1] >= weights[0]);
+}
+
+#[test]
+fn e2e_patches_to_regions_edge_cases() {
+    use rank_refine::simd::patches_to_regions;
+
+    // Empty patches
+    assert_eq!(patches_to_regions(&[], 1024, 768, 32), vec![]);
+
+    // Zero patches per side
+    assert_eq!(patches_to_regions(&[0, 1], 1024, 768, 0), vec![]);
+
+    // Zero image dimensions
+    assert_eq!(patches_to_regions(&[0, 1], 0, 768, 32), vec![]);
+    assert_eq!(patches_to_regions(&[0, 1], 1024, 0, 32), vec![]);
+
+    // Invalid patch indices (>= total_patches)
+    let regions = patches_to_regions(&[0, 1024, 2000], 1024, 768, 32);
+    // 32×32 = 1024 patches, so indices 1024 and 2000 are invalid
+    assert_eq!(regions.len(), 1, "Should filter out invalid indices");
+
+    // All patches valid
+    let regions = patches_to_regions(&[0, 1, 32, 33, 1023], 1024, 768, 32);
+    assert_eq!(regions.len(), 5);
+    for (x, y, w, h) in &regions {
+        assert!(*x < 1024 && *y < 768, "Regions should be within image bounds");
+    }
+}
+
+#[test]
+fn e2e_extract_snippet_edge_cases() {
+    use rank_refine::simd::extract_snippet_indices;
+
+    // Empty alignments
+    assert_eq!(extract_snippet_indices(&[], 2, 10), vec![]);
+
+    // Max tokens = 0
+    let alignments = vec![(0, 5, 0.9), (1, 10, 0.8)];
+    assert_eq!(extract_snippet_indices(&alignments, 1, 0), vec![]);
+
+    // Large context window
+    let alignments = vec![(0, 10, 0.9)];
+    let snippet = extract_snippet_indices(&alignments, 100, 200);
+    // Should include context but respect bounds
+    assert!(snippet.contains(&10), "Should include matched token");
+    assert!(snippet.len() <= 200, "Should respect max_tokens");
+
+    // Multiple alignments to same doc token
+    let alignments = vec![(0, 5, 0.9), (1, 5, 0.8), (2, 5, 0.7)];
+    let snippet = extract_snippet_indices(&alignments, 2, 100);
+    // Should only include token 5 once (HashSet deduplication)
+    let count_5 = snippet.iter().filter(|&&x| x == 5).count();
+    assert_eq!(count_5, 1, "Should deduplicate same token");
 }
