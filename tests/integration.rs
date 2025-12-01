@@ -1422,7 +1422,7 @@ fn e2e_patches_to_regions_edge_cases() {
     // All patches valid
     let regions = patches_to_regions(&[0, 1, 32, 33, 1023], 1024, 768, 32);
     assert_eq!(regions.len(), 5);
-    for (x, y, w, h) in &regions {
+    for (x, y, _w, _h) in &regions {
         assert!(*x < 1024 && *y < 768, "Regions should be within image bounds");
     }
 }
