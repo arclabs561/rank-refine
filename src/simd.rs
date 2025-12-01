@@ -899,10 +899,11 @@ pub fn idf_weights(token_doc_freqs: &[usize], total_docs: usize) -> Vec<f32> {
         // All tokens have same IDF - return uniform weights
         vec![1.0; token_doc_freqs.len()]
     } else {
-        idf_scores
-            .iter()
-            .map(|&idf| (idf - min_idf) / (max_idf - min_idf))
-            .collect()
+        let mut weights = Vec::with_capacity(idf_scores.len());
+        for &idf in &idf_scores {
+            weights.push((idf - min_idf) / (max_idf - min_idf));
+        }
+        weights
     }
 }
 
@@ -1148,6 +1149,10 @@ pub fn extract_snippet_indices(
     result.sort_unstable();
 
     // Limit to max_tokens (take first max_tokens)
+    // If max_tokens is 0, return empty (user explicitly wants no tokens)
+    if max_tokens == 0 {
+        return Vec::new();
+    }
     if result.len() > max_tokens {
         result.truncate(max_tokens);
     }
