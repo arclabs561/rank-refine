@@ -875,6 +875,10 @@ pub fn idf_weights(token_doc_freqs: &[usize], total_docs: usize) -> Vec<f32> {
             if df == 0 {
                 // Token never appears - maximum importance
                 (total_docs as f32 + 1.0).ln()
+            } else if df > total_docs {
+                // Invalid: document frequency exceeds total documents
+                // Treat as if it appears in all documents (minimum importance)
+                0.0
             } else {
                 ((total_docs as f32 + 1.0) / (df as f32 + 1.0)).ln()
             }
@@ -953,12 +957,17 @@ pub fn bm25_weights(
     if token_doc_freqs.is_empty() || total_docs == 0 {
         return vec![];
     }
+    // Validate k1 parameter
+    let k1 = k1.max(0.0); // k1 should be non-negative
 
     let idf_scores: Vec<f32> = token_doc_freqs
         .iter()
         .map(|&df| {
             if df == 0 {
                 (total_docs as f32 + 1.0).ln()
+            } else if df > total_docs {
+                // Invalid: document frequency exceeds total documents
+                0.0
             } else {
                 ((total_docs as f32 + 1.0) / (df as f32 + 1.0)).ln()
             }
@@ -1041,17 +1050,22 @@ pub fn patches_to_regions(
         return Vec::new();
     }
 
-    let patch_width = image_width / patches_per_side;
-    let patch_height = image_height / patches_per_side;
+    let patch_width = image_width / patches_per_side.max(1);
+    let patch_height = image_height / patches_per_side.max(1);
 
     patch_indices
         .iter()
-        .map(|&patch_idx| {
+        .filter_map(|&patch_idx| {
+            // Validate patch index is within valid range
+            let total_patches = patches_per_side * patches_per_side;
+            if patch_idx >= total_patches {
+                return None; // Skip invalid patch indices
+            }
             let row = patch_idx / patches_per_side;
             let col = patch_idx % patches_per_side;
             let x = col * patch_width;
             let y = row * patch_height;
-            (x, y, patch_width, patch_height)
+            Some((x, y, patch_width, patch_height))
         })
         .collect()
 }
