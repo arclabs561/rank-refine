@@ -911,6 +911,186 @@ fn e2e_alignment_cosine_vs_dot() {
     );
 }
 
+#[test]
+fn e2e_batch_alignment_functions() {
+    const DIM: usize = 64;
+
+    let query = mock_token_embed("test query", DIM);
+    let docs = vec![
+        mock_token_embed("first document", DIM),
+        mock_token_embed("second document", DIM),
+        mock_token_embed("third document", DIM),
+    ];
+
+    // Batch alignments
+    let batch_alignments = simd::maxsim_alignments_batch(&query, &docs);
+    assert_eq!(batch_alignments.len(), 3);
+
+    // Verify batch matches individual
+    for (doc_idx, doc) in docs.iter().enumerate() {
+        let individual = simd::maxsim_alignments_vecs(&query, doc);
+        let batch = &batch_alignments[doc_idx];
+
+        assert_eq!(
+            individual.len(),
+            batch.len(),
+            "Doc {}: Alignment count should match",
+            doc_idx
+        );
+
+        // Verify alignment sum consistency
+        let individual_sum: f32 = individual.iter().map(|(_, _, s)| s).sum();
+        let batch_sum: f32 = batch.iter().map(|(_, _, s)| s).sum();
+        assert!(
+            (individual_sum - batch_sum).abs() < 1e-4,
+            "Doc {}: Alignment sums should match",
+            doc_idx
+        );
+    }
+
+    // Batch highlights
+    let batch_highlights = simd::highlight_matches_batch(&query, &docs, 0.3);
+    assert_eq!(batch_highlights.len(), 3);
+
+    // Verify batch matches individual
+    for (doc_idx, doc) in docs.iter().enumerate() {
+        let individual = simd::highlight_matches_vecs(&query, doc, 0.3);
+        let batch = &batch_highlights[doc_idx];
+
+        let mut individual_sorted = individual.clone();
+        individual_sorted.sort_unstable();
+        let mut batch_sorted = batch.clone();
+        batch_sorted.sort_unstable();
+
+        assert_eq!(
+            individual_sorted, batch_sorted,
+            "Doc {}: Highlights should match",
+            doc_idx
+        );
+    }
+
+    // Batch cosine alignments
+    let batch_cosine = simd::maxsim_alignments_cosine_batch(&query, &docs);
+    assert_eq!(batch_cosine.len(), 3);
+
+    // Verify cosine batch matches individual
+    for (doc_idx, doc) in docs.iter().enumerate() {
+        let q_refs: Vec<&[f32]> = query.iter().map(|t| t.as_slice()).collect();
+        let d_refs: Vec<&[f32]> = doc.iter().map(|t| t.as_slice()).collect();
+        let individual = simd::maxsim_alignments_cosine(&q_refs, &d_refs);
+        let batch = &batch_cosine[doc_idx];
+
+        assert_eq!(
+            individual.len(),
+            batch.len(),
+            "Doc {}: Cosine alignment count should match",
+            doc_idx
+        );
+    }
+}
+
+#[test]
+fn e2e_alignment_utility_functions() {
+    const DIM: usize = 64;
+
+    let query = mock_token_embed("important query terms", DIM);
+    let doc = mock_token_embed("document with matching important terms", DIM);
+
+    let alignments = simd::maxsim_alignments_vecs(&query, &doc);
+
+    // Top-k alignments
+    let top2 = simd::top_k_alignments(&alignments, 2);
+    assert_eq!(top2.len(), 2);
+    assert!(top2[0].2 >= top2[1].2, "Should be sorted by score");
+
+    // Verify top-k are actually highest
+    let all_scores: Vec<f32> = alignments.iter().map(|(_, _, s)| *s).collect();
+    let mut sorted_scores = all_scores.clone();
+    sorted_scores.sort_by(|a, b| b.partial_cmp(a).unwrap());
+    assert_eq!(top2[0].2, sorted_scores[0], "Top alignment should be highest");
+    assert_eq!(top2[1].2, sorted_scores[1], "Second should be second highest");
+
+    // Filter alignments
+    let min_score = 0.5;
+    let filtered = simd::filter_alignments(&alignments, min_score);
+    assert!(
+        filtered.iter().all(|(_, _, s)| *s >= min_score),
+        "All filtered alignments should be above threshold"
+    );
+    assert!(
+        filtered.len() <= alignments.len(),
+        "Filtered should not be larger than original"
+    );
+
+    // Alignments for specific query tokens
+    use std::collections::HashSet;
+    let query_indices: HashSet<usize> = [0, 2].iter().copied().collect();
+    let query_filtered = simd::alignments_for_query_tokens(&alignments, &query_indices);
+    assert!(
+        query_filtered.iter().all(|(q_idx, _, _)| query_indices.contains(q_idx)),
+        "All should be for specified query tokens"
+    );
+
+    // Alignments for specific doc tokens
+    let doc_indices: HashSet<usize> = [0, 1].iter().copied().collect();
+    let doc_filtered = simd::alignments_for_doc_tokens(&alignments, &doc_indices);
+    assert!(
+        doc_filtered.iter().all(|(_, d_idx, _)| doc_indices.contains(d_idx)),
+        "All should be for specified doc tokens"
+    );
+
+    // Alignment statistics
+    let (min, max, mean, sum, count) = simd::alignment_stats(&alignments);
+    assert_eq!(count, alignments.len(), "Count should match");
+    assert!(
+        (sum - alignments.iter().map(|(_, _, s)| s).sum::<f32>()).abs() < 1e-4,
+        "Sum should match"
+    );
+    assert!(min <= max, "Min should be <= max");
+    assert!(
+        (mean - sum / count as f32).abs() < 1e-4,
+        "Mean should be sum/count"
+    );
+}
+
+#[test]
+fn e2e_batch_alignment_with_utilities() {
+    const DIM: usize = 64;
+
+    let query = mock_token_embed("test query", DIM);
+    let docs = vec![
+        mock_token_embed("first document", DIM),
+        mock_token_embed("second document", DIM),
+    ];
+
+    // Get batch alignments
+    let batch_alignments = simd::maxsim_alignments_batch(&query, &docs);
+
+    // Apply utilities to each document's alignments
+    for (doc_idx, alignments) in batch_alignments.iter().enumerate() {
+        // Top-k per document
+        let top2 = simd::top_k_alignments(alignments, 2);
+        assert!(top2.len() <= 2, "Doc {}: Top-k should be <= k", doc_idx);
+
+        // Filter by threshold
+        let filtered = simd::filter_alignments(alignments, 0.3);
+        assert!(
+            filtered.iter().all(|(_, _, s)| *s >= 0.3),
+            "Doc {}: Filtered should be above threshold",
+            doc_idx
+        );
+
+        // Statistics
+        let (min, max, mean, sum, count) = simd::alignment_stats(alignments);
+        assert_eq!(count, alignments.len(), "Doc {}: Count should match", doc_idx);
+        assert!(
+            (sum - alignments.iter().map(|(_, _, s)| s).sum::<f32>()).abs() < 1e-4,
+            "Doc {}: Sum should match",
+            doc_idx
+        );
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // E2E Test: Weighted MaxSim Pipeline
 // ─────────────────────────────────────────────────────────────────────────────

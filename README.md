@@ -34,6 +34,8 @@ Scoring primitives for retrieval systems:
 | Score pre-computed embeddings | `cosine`, `dot`, `maxsim` |
 | ColBERT/late interaction | `maxsim_vecs`, `maxsim_batch` |
 | Token-level alignment/highlighting | `maxsim_alignments`, `highlight_matches` |
+| Batch alignment/highlighting | `maxsim_alignments_batch`, `highlight_matches_batch` |
+| Alignment utilities | `top_k_alignments`, `filter_alignments`, `alignment_stats` |
 | Diversity selection | `mmr_cosine`, `dpp` |
 | Compress token embeddings | `pool_tokens`, `pool_tokens_adaptive` |
 | Two-stage refinement | `matryoshka::refine` |
@@ -90,6 +92,13 @@ let score = colbert::maxsim_vecs(&query, &doc);
 | `maxsim_cosine(q, d)` | `&[&[f32]]` | Cosine variant |
 | `maxsim_weighted(q, d, w)` | `&[&[f32]], &[f32]` | Per-token weights |
 | `maxsim_batch(q, docs)` | `&[Vec<f32>], &[Vec<Vec<f32>>]` | Batch scoring |
+| `maxsim_alignments(q, d)` | `&[&[f32]]` | Token-level alignments |
+| `maxsim_alignments_batch(q, docs)` | `&[Vec<f32>], &[Vec<Vec<f32>>]` | Batch alignments |
+| `highlight_matches(q, d, t)` | `&[&[f32]], f32` | Highlighted token indices |
+| `highlight_matches_batch(q, docs, t)` | `&[Vec<f32>], &[Vec<Vec<f32>>], f32` | Batch highlights |
+| `top_k_alignments(aligns, k)` | `&[(usize, usize, f32)], usize` | Top-k alignments |
+| `filter_alignments(aligns, min)` | `&[(usize, usize, f32)], f32` | Filter by score |
+| `alignment_stats(aligns)` | `&[(usize, usize, f32)]` | Min/max/mean/sum stats |
 
 ### Token Pooling
 

@@ -50,8 +50,11 @@ pub mod prelude {
 
     // Token alignment and highlighting (ColBERT interpretability)
     pub use crate::simd::{
-        highlight_matches, highlight_matches_vecs, maxsim_alignments, maxsim_alignments_cosine,
-        maxsim_alignments_cosine_vecs, maxsim_alignments_vecs,
+        alignments_for_doc_tokens, alignments_for_query_tokens, alignment_stats,
+        filter_alignments, highlight_matches, highlight_matches_batch, highlight_matches_vecs,
+        maxsim_alignments, maxsim_alignments_batch, maxsim_alignments_cosine,
+        maxsim_alignments_cosine_batch, maxsim_alignments_cosine_vecs, maxsim_alignments_vecs,
+        top_k_alignments,
     };
 
     // `ColBERT`

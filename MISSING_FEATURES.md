@@ -42,7 +42,7 @@ This document tracks features mentioned in ColBERT/ColPali research papers that 
 
 **What it is**: Batch versions of `maxsim_alignments()` and `highlight_matches()` for processing multiple documents at once.
 
-**Current status**: We have `maxsim_batch()` for scoring, but not for alignments.
+**Current status**: ✅ **IMPLEMENTED** - Added `maxsim_alignments_batch()`, `maxsim_alignments_cosine_batch()`, and `highlight_matches_batch()`.
 
 **Implementation complexity**: Low - straightforward extension of existing batch functions.
 
@@ -89,7 +89,8 @@ This document tracks features mentioned in ColBERT/ColPali research papers that 
 |---------|-----------|----------|-------|
 | Residual compression | High | Low | Token pooling is simpler alternative |
 | [MASK] token support | Medium | Medium | Encoder-level, but weighted MaxSim helps |
-| Batch alignment | Low | Medium | Nice-to-have optimization |
+| Batch alignment | Low | ✅ **DONE** | Implemented with utilities |
+| Alignment utilities | Low | ✅ **DONE** | top_k, filter, stats, query/doc filtering |
 | Query expansion utils | Low-Medium | Low | Typically done before encoding |
 | Advanced pooling | Medium | Low | Current methods sufficient |
 | Multimodal helpers | Low | Low | Can be built on top |

@@ -544,6 +544,280 @@ pub fn maxsim_cosine_batch(query: &[Vec<f32>], docs: &[Vec<Vec<f32>>]) -> Vec<f3
         .collect()
 }
 
+/// Batch token-level alignments: get alignments for a query against multiple documents.
+///
+/// Returns a vector of alignment vectors, one per document. Each alignment vector
+/// contains `(query_idx, doc_idx, similarity_score)` tuples.
+///
+/// More efficient than calling `maxsim_alignments` in a loop when you have many documents.
+///
+/// See [`maxsim_alignments`] for details.
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::simd::maxsim_alignments_batch;
+///
+/// let query = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+/// let docs = vec![
+///     vec![vec![0.9, 0.1], vec![0.1, 0.9]],  // doc 0
+///     vec![vec![0.5, 0.5]],                  // doc 1
+/// ];
+/// let all_alignments = maxsim_alignments_batch(&query, &docs);
+/// assert_eq!(all_alignments.len(), 2);
+/// assert_eq!(all_alignments[0].len(), 2); // One alignment per query token
+/// ```
+#[must_use]
+pub fn maxsim_alignments_batch(
+    query: &[Vec<f32>],
+    docs: &[Vec<Vec<f32>>],
+) -> Vec<Vec<(usize, usize, f32)>> {
+    let q = crate::as_slices(query);
+    docs.iter()
+        .map(|doc| {
+            let d = crate::as_slices(doc);
+            maxsim_alignments(&q, &d)
+        })
+        .collect()
+}
+
+/// Batch token-level alignments with cosine similarity.
+///
+/// See [`maxsim_alignments_batch`] and [`maxsim_alignments_cosine`] for details.
+#[must_use]
+pub fn maxsim_alignments_cosine_batch(
+    query: &[Vec<f32>],
+    docs: &[Vec<Vec<f32>>],
+) -> Vec<Vec<(usize, usize, f32)>> {
+    let q = crate::as_slices(query);
+    docs.iter()
+        .map(|doc| {
+            let d = crate::as_slices(doc);
+            maxsim_alignments_cosine(&q, &d)
+        })
+        .collect()
+}
+
+/// Batch highlighted matches: get highlighted token indices for a query against multiple documents.
+///
+/// Returns a vector of highlighted index vectors, one per document. Each vector contains
+/// unique document token indices that match query tokens above the threshold.
+///
+/// More efficient than calling `highlight_matches` in a loop when you have many documents.
+///
+/// See [`highlight_matches`] for details.
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::simd::highlight_matches_batch;
+///
+/// let query = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+/// let docs = vec![
+///     vec![vec![0.9, 0.1], vec![0.1, 0.9], vec![0.5, 0.5]],  // doc 0
+///     vec![vec![0.3, 0.3]],                                  // doc 1
+/// ];
+/// let all_highlights = highlight_matches_batch(&query, &docs, 0.7);
+/// assert_eq!(all_highlights.len(), 2);
+/// ```
+#[must_use]
+pub fn highlight_matches_batch(
+    query: &[Vec<f32>],
+    docs: &[Vec<Vec<f32>>],
+    threshold: f32,
+) -> Vec<Vec<usize>> {
+    let q = crate::as_slices(query);
+    docs.iter()
+        .map(|doc| {
+            let d = crate::as_slices(doc);
+            highlight_matches(&q, &d, threshold)
+        })
+        .collect()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Alignment utility functions
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Get top-k highest scoring alignments from an alignment vector.
+///
+/// Returns the top-k alignments sorted by similarity score (descending).
+/// Useful for focusing on the most important token matches.
+///
+/// # Arguments
+///
+/// * `alignments` - Vector of `(query_idx, doc_idx, score)` tuples
+/// * `k` - Number of top alignments to return
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::simd::{maxsim_alignments_vecs, top_k_alignments};
+///
+/// let query = vec![vec![1.0, 0.0], vec![0.0, 1.0], vec![0.5, 0.5]];
+/// let doc = vec![vec![0.9, 0.1], vec![0.1, 0.9], vec![0.3, 0.3], vec![0.8, 0.2]];
+/// let all_alignments = maxsim_alignments_vecs(&query, &doc);
+/// let top2 = top_k_alignments(&all_alignments, 2);
+/// assert_eq!(top2.len(), 2);
+/// assert!(top2[0].2 >= top2[1].2); // Sorted by score
+/// ```
+#[must_use]
+pub fn top_k_alignments(
+    alignments: &[(usize, usize, f32)],
+    k: usize,
+) -> Vec<(usize, usize, f32)> {
+    if k == 0 || alignments.is_empty() {
+        return Vec::new();
+    }
+    let mut sorted: Vec<_> = alignments.to_vec();
+    sorted.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+    sorted.into_iter().take(k).collect()
+}
+
+/// Filter alignments by minimum similarity score threshold.
+///
+/// Returns only alignments with similarity score >= `min_score`.
+/// Useful for removing low-quality matches.
+///
+/// # Arguments
+///
+/// * `alignments` - Vector of `(query_idx, doc_idx, score)` tuples
+/// * `min_score` - Minimum similarity score threshold
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::simd::{maxsim_alignments_vecs, filter_alignments};
+///
+/// let query = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+/// let doc = vec![vec![0.9, 0.1], vec![0.1, 0.9], vec![0.3, 0.3]];
+/// let all_alignments = maxsim_alignments_vecs(&query, &doc);
+/// let high_quality = filter_alignments(&all_alignments, 0.7);
+/// // Only includes alignments with score >= 0.7
+/// ```
+#[must_use]
+pub fn filter_alignments(
+    alignments: &[(usize, usize, f32)],
+    min_score: f32,
+) -> Vec<(usize, usize, f32)> {
+    alignments
+        .iter()
+        .filter(|(_, _, score)| *score >= min_score)
+        .copied()
+        .collect()
+}
+
+/// Extract alignments for specific query token indices.
+///
+/// Returns only alignments where the query token index is in `query_indices`.
+/// Useful for analyzing matches for specific query terms.
+///
+/// # Arguments
+///
+/// * `alignments` - Vector of `(query_idx, doc_idx, score)` tuples
+/// * `query_indices` - Set of query token indices to include
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::simd::{maxsim_alignments_vecs, alignments_for_query_tokens};
+/// use std::collections::HashSet;
+///
+/// let query = vec![vec![1.0, 0.0], vec![0.0, 1.0], vec![0.5, 0.5]];
+/// let doc = vec![vec![0.9, 0.1], vec![0.1, 0.9]];
+/// let all_alignments = maxsim_alignments_vecs(&query, &doc);
+/// let query_indices: HashSet<usize> = [0, 2].iter().copied().collect();
+/// let filtered = alignments_for_query_tokens(&all_alignments, &query_indices);
+/// // Only includes alignments for query tokens 0 and 2
+/// ```
+#[must_use]
+pub fn alignments_for_query_tokens(
+    alignments: &[(usize, usize, f32)],
+    query_indices: &std::collections::HashSet<usize>,
+) -> Vec<(usize, usize, f32)> {
+    alignments
+        .iter()
+        .filter(|(q_idx, _, _)| query_indices.contains(q_idx))
+        .copied()
+        .collect()
+}
+
+/// Extract alignments for specific document token indices.
+///
+/// Returns only alignments where the document token index is in `doc_indices`.
+/// Useful for analyzing which query tokens match specific document regions.
+///
+/// # Arguments
+///
+/// * `alignments` - Vector of `(query_idx, doc_idx, score)` tuples
+/// * `doc_indices` - Set of document token indices to include
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::simd::{maxsim_alignments_vecs, alignments_for_doc_tokens};
+/// use std::collections::HashSet;
+///
+/// let query = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+/// let doc = vec![vec![0.9, 0.1], vec![0.1, 0.9], vec![0.5, 0.5]];
+/// let all_alignments = maxsim_alignments_vecs(&query, &doc);
+/// let doc_indices: HashSet<usize> = [0, 2].iter().copied().collect();
+/// let filtered = alignments_for_doc_tokens(&all_alignments, &doc_indices);
+/// // Only includes alignments for document tokens 0 and 2
+/// ```
+#[must_use]
+pub fn alignments_for_doc_tokens(
+    alignments: &[(usize, usize, f32)],
+    doc_indices: &std::collections::HashSet<usize>,
+) -> Vec<(usize, usize, f32)> {
+    alignments
+        .iter()
+        .filter(|(_, d_idx, _)| doc_indices.contains(d_idx))
+        .copied()
+        .collect()
+}
+
+/// Get alignment statistics: min, max, mean, and sum of similarity scores.
+///
+/// Useful for understanding the distribution of alignment scores.
+///
+/// # Returns
+///
+/// `(min_score, max_score, mean_score, sum_score, count)`
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::simd::{maxsim_alignments_vecs, alignment_stats};
+///
+/// let query = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+/// let doc = vec![vec![0.9, 0.1], vec![0.1, 0.9], vec![0.3, 0.3]];
+/// let alignments = maxsim_alignments_vecs(&query, &doc);
+/// let (min, max, mean, sum, count) = alignment_stats(&alignments);
+/// println!("Min: {}, Max: {}, Mean: {}, Sum: {}, Count: {}", min, max, mean, sum, count);
+/// ```
+#[must_use]
+pub fn alignment_stats(
+    alignments: &[(usize, usize, f32)],
+) -> (f32, f32, f32, f32, usize) {
+    if alignments.is_empty() {
+        return (0.0, 0.0, 0.0, 0.0, 0);
+    }
+    let scores: Vec<f32> = alignments.iter().map(|(_, _, s)| *s).collect();
+    let min = scores
+        .iter()
+        .copied()
+        .fold(f32::INFINITY, f32::min);
+    let max = scores
+        .iter()
+        .copied()
+        .fold(f32::NEG_INFINITY, f32::max);
+    let sum: f32 = scores.iter().sum();
+    let count = scores.len();
+    let mean = sum / count as f32;
+    (min, max, mean, sum, count)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Score normalization utilities
 // ─────────────────────────────────────────────────────────────────────────────
