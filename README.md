@@ -144,7 +144,9 @@ let score = colbert::maxsim_vecs(&query, &doc);
 
 MaxSim scores token-level alignment. For each query token, find its best-matching document token, then sum:
 
-$$\text{score}(Q, D) = \sum_{i} \max_{j} (q_i \cdot d_j)$$
+$$\text{score}(Q, D) = \sum_{i=1}^{|Q|} \max_{j=1}^{|D|} (q_i \cdot d_j)$$
+
+where $|Q|$ is the number of query tokens and $|D|$ is the number of document tokens.
 
 **Visual example**:
 
@@ -190,7 +192,13 @@ This captures token-level alignment: "capital" and "France" both have strong mat
 
 **Solution**: Balance relevance with diversity by penalizing similarity to already-selected items:
 
-$$\text{MMR} = \arg\max_d \left[ \lambda \cdot \text{rel}(d) - (1-\lambda) \cdot \max_{s \in S} \text{sim}(d,s) \right]$$
+$$\text{MMR}(d) = \lambda \cdot \text{rel}(d) - (1-\lambda) \cdot \max_{s \in S} \text{sim}(d, s)$$
+
+where:
+- $\lambda$ is the relevance-diversity tradeoff parameter (range [0, 1])
+- $\text{rel}(d)$ is the relevance score of document $d$
+- $S$ is the set of already-selected documents
+- $\text{sim}(d, s)$ is the similarity between document $d$ and selected document $s$
 
 **Lambda parameter**:
 - `λ = 1.0`: Pure relevance (equivalent to top-k)

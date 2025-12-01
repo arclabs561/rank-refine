@@ -120,6 +120,8 @@ Full transformer attention over concatenated query+document:
 
 $$\text{score}(q, d) = \text{Model}(\texttt{[CLS]} \oplus q \oplus \texttt{[SEP]} \oplus d)$$
 
+where $\oplus$ denotes concatenation, and the model outputs a relevance score from the `[CLS]` token.
+
 **Complexity:** $O((|q| + |d|)^2)$ due to self-attention over the concatenated sequence.
 
 **Why better:** The model sees query and document tokens *together*, allowing direct cross-attention. Bi-encoders (dense) encode query and doc separately, losing this interaction. Cross-encoders achieve ~5x better MRR@10 than dense on MS MARCO (Nogueira & Cho, 2019).
