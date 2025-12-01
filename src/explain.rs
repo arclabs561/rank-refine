@@ -191,20 +191,22 @@ pub struct RankedResult<K> {
 /// use rank_refine::explain::{RerankerInput, Candidate, RerankMethod, rerank_batch};
 ///
 /// let query_tokens = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+/// let doc1_tokens = vec![vec![0.9, 0.1], vec![0.1, 0.9]];
+/// let doc2_tokens = vec![vec![0.5, 0.5]];
 ///
 /// let candidates = vec![
 ///     Candidate {
 ///         id: "doc1",
 ///         original_score: 0.8,
 ///         dense_embedding: None,
-///         token_embeddings: Some(&[vec![0.9, 0.1], vec![0.1, 0.9]]),
+///         token_embeddings: Some(&doc1_tokens),
 ///         text: None,
 ///     },
 ///     Candidate {
 ///         id: "doc2",
 ///         original_score: 0.7,
 ///         dense_embedding: None,
-///         token_embeddings: Some(&[vec![0.5, 0.5]]),
+///         token_embeddings: Some(&doc2_tokens),
 ///         text: None,
 ///     },
 /// ];
