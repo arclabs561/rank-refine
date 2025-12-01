@@ -33,6 +33,7 @@ Scoring primitives for retrieval systems:
 |----------|---------------------|
 | Score pre-computed embeddings | `cosine`, `dot`, `maxsim` |
 | ColBERT/late interaction | `maxsim_vecs`, `maxsim_batch` |
+| Token-level alignment/highlighting | `maxsim_alignments`, `highlight_matches` |
 | Diversity selection | `mmr_cosine`, `dpp` |
 | Compress token embeddings | `pool_tokens`, `pool_tokens_adaptive` |
 | Two-stage refinement | `matryoshka::refine` |
@@ -106,6 +107,15 @@ let score = colbert::maxsim_vecs(&query, &doc);
 | `mmr_cosine(candidates, embeddings, config)` | Maximal Marginal Relevance |
 | `dpp(candidates, embeddings, config)` | Determinantal Point Process |
 
+### Token Alignment & Highlighting
+
+| Function | Purpose |
+|----------|---------|
+| `maxsim_alignments(query, doc)` | Get (query_idx, doc_idx, score) alignment pairs |
+| `highlight_matches(query, doc, threshold)` | Extract highlighted doc token indices |
+| `colbert::alignments(query, doc)` | Convenience wrapper for alignments |
+| `colbert::highlight(query, doc, threshold)` | Convenience wrapper for highlighting |
+
 ### Utilities
 
 | Function | Purpose |
@@ -143,6 +153,8 @@ MaxSim = 0.9 + 0.8 + ... (sum of best matches)
 - MaxSim = 0.95 + 0.92 = 1.87
 
 This captures token-level alignment: "capital" and "France" both have strong matches, even if they appear in different parts of the document. Single-vector embeddings average these signals and lose precision.
+
+**Token-level alignment and highlighting**: Unlike single-vector embeddings, ColBERT can show exactly which document tokens match each query token. Use `maxsim_alignments()` to get alignment pairs, or `highlight_matches()` to extract highlighted token indices for snippet extraction.
 
 **When to use**:
 - Second-stage reranking (after dense retrieval)

@@ -161,6 +161,160 @@ pub fn maxsim_cosine(query_tokens: &[&[f32]], doc_tokens: &[&[f32]]) -> f32 {
         .sum()
 }
 
+/// Token-level alignment information from `MaxSim` computation.
+///
+/// Returns for each query token: `(query_token_idx, doc_token_idx, similarity_score)`
+/// where `doc_token_idx` is the document token with maximum similarity to that query token.
+///
+/// This enables highlighting, snippet extraction, and interpretability—core ColBERT features
+/// that distinguish it from single-vector embeddings.
+///
+/// # Returns
+///
+/// Vector of `(query_idx, doc_idx, score)` tuples, one per query token.
+/// Empty if `query_tokens` or `doc_tokens` is empty.
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::simd::maxsim_alignments;
+///
+/// let q1 = [1.0, 0.0];
+/// let q2 = [0.0, 1.0];
+/// let d1 = [0.9, 0.1];
+/// let d2 = [0.1, 0.9];
+/// let d3 = [0.5, 0.5];
+/// let query: &[&[f32]] = &[&q1, &q2];
+/// let doc: &[&[f32]] = &[&d1, &d2, &d3];
+/// let alignments = maxsim_alignments(query, doc);
+///
+/// // Query token 0 matches doc token 0 with score ~0.9
+/// // Query token 1 matches doc token 1 with score ~0.9
+/// assert_eq!(alignments.len(), 2);
+/// ```
+#[must_use]
+pub fn maxsim_alignments(
+    query_tokens: &[&[f32]],
+    doc_tokens: &[&[f32]],
+) -> Vec<(usize, usize, f32)> {
+    if query_tokens.is_empty() || doc_tokens.is_empty() {
+        return Vec::new();
+    }
+
+    query_tokens
+        .iter()
+        .enumerate()
+        .map(|(q_idx, q)| {
+            let (best_doc_idx, best_score) = doc_tokens
+                .iter()
+                .enumerate()
+                .map(|(d_idx, d)| (d_idx, dot(q, d)))
+                .fold(
+                    (0, f32::NEG_INFINITY),
+                    |(best_idx, best_score), (idx, score)| {
+                        if score > best_score {
+                            (idx, score)
+                        } else {
+                            (best_idx, best_score)
+                        }
+                    },
+                );
+            (q_idx, best_doc_idx, best_score)
+        })
+        .collect()
+}
+
+/// Token-level alignment with cosine similarity.
+///
+/// See [`maxsim_alignments`] for details.
+#[must_use]
+pub fn maxsim_alignments_cosine(
+    query_tokens: &[&[f32]],
+    doc_tokens: &[&[f32]],
+) -> Vec<(usize, usize, f32)> {
+    if query_tokens.is_empty() || doc_tokens.is_empty() {
+        return Vec::new();
+    }
+
+    query_tokens
+        .iter()
+        .enumerate()
+        .map(|(q_idx, q)| {
+            let (best_doc_idx, best_score) = doc_tokens
+                .iter()
+                .enumerate()
+                .map(|(d_idx, d)| (d_idx, cosine(q, d)))
+                .fold(
+                    (0, f32::NEG_INFINITY),
+                    |(best_idx, best_score), (idx, score)| {
+                        if score > best_score {
+                            (idx, score)
+                        } else {
+                            (best_idx, best_score)
+                        }
+                    },
+                );
+            (q_idx, best_doc_idx, best_score)
+        })
+        .collect()
+}
+
+/// Extract highlighted document token indices that match query tokens.
+///
+/// Returns unique document token indices that have high similarity to any query token.
+/// Useful for snippet extraction and highlighting in search results.
+///
+/// # Arguments
+///
+/// * `query_tokens` - Query token embeddings
+/// * `doc_tokens` - Document token embeddings
+/// * `threshold` - Minimum similarity score to include (typically 0.5-0.7 for normalized embeddings)
+///
+/// # Returns
+///
+/// Sorted vector of unique document token indices that match query tokens above threshold.
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::simd::highlight_matches;
+///
+/// let q1 = [1.0, 0.0];
+/// let d1 = [0.9, 0.1];  // matches query[0]
+/// let d2 = [0.1, 0.9];  // matches query[1]
+/// let d3 = [0.5, 0.5];  // low match
+/// let query: &[&[f32]] = &[&q1];
+/// let doc: &[&[f32]] = &[&d1, &d2, &d3];
+///
+/// let highlighted = highlight_matches(query, doc, 0.7);
+/// // Returns [0] - index of token that matches well
+/// ```
+#[must_use]
+pub fn highlight_matches(
+    query_tokens: &[&[f32]],
+    doc_tokens: &[&[f32]],
+    threshold: f32,
+) -> Vec<usize> {
+    if query_tokens.is_empty() || doc_tokens.is_empty() {
+        return Vec::new();
+    }
+
+    let mut matched_indices = std::collections::HashSet::new();
+
+    for q in query_tokens {
+        for (d_idx, d) in doc_tokens.iter().enumerate() {
+            let similarity = dot(q, d);
+            if similarity >= threshold {
+                matched_indices.insert(d_idx);
+            }
+        }
+    }
+
+    let mut result: Vec<usize> = matched_indices.into_iter().collect();
+    result.sort_unstable();
+    result
+}
+
 /// Weighted `MaxSim`: token importance weighting.
 ///
 /// Formula: `score(Q, D) = Σᵢ wᵢ × maxⱼ(Qᵢ · Dⱼ)`
@@ -292,6 +446,49 @@ pub fn maxsim_cosine_vecs(query_tokens: &[Vec<f32>], doc_tokens: &[Vec<f32>]) ->
     let q = crate::as_slices(query_tokens);
     let d = crate::as_slices(doc_tokens);
     maxsim_cosine(&q, &d)
+}
+
+/// Token alignments for owned token vectors (convenience wrapper).
+///
+/// See [`maxsim_alignments`] for details.
+#[inline]
+#[must_use]
+pub fn maxsim_alignments_vecs(
+    query_tokens: &[Vec<f32>],
+    doc_tokens: &[Vec<f32>],
+) -> Vec<(usize, usize, f32)> {
+    let q = crate::as_slices(query_tokens);
+    let d = crate::as_slices(doc_tokens);
+    maxsim_alignments(&q, &d)
+}
+
+/// Token alignments with cosine for owned token vectors (convenience wrapper).
+///
+/// See [`maxsim_alignments_cosine`] for details.
+#[inline]
+#[must_use]
+pub fn maxsim_alignments_cosine_vecs(
+    query_tokens: &[Vec<f32>],
+    doc_tokens: &[Vec<f32>],
+) -> Vec<(usize, usize, f32)> {
+    let q = crate::as_slices(query_tokens);
+    let d = crate::as_slices(doc_tokens);
+    maxsim_alignments_cosine(&q, &d)
+}
+
+/// Highlighted matches for owned token vectors (convenience wrapper).
+///
+/// See [`highlight_matches`] for details.
+#[inline]
+#[must_use]
+pub fn highlight_matches_vecs(
+    query_tokens: &[Vec<f32>],
+    doc_tokens: &[Vec<f32>],
+    threshold: f32,
+) -> Vec<usize> {
+    let q = crate::as_slices(query_tokens);
+    let d = crate::as_slices(doc_tokens);
+    highlight_matches(&q, &d, threshold)
 }
 
 /// Batch `MaxSim`: score a query against multiple documents.
@@ -647,6 +844,136 @@ unsafe fn dot_neon(a: &[f32], b: &[f32]) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_maxsim_alignments_basic() {
+        // Query: [1,0] and [0,1]
+        // Doc: [0.9,0.1], [0.1,0.9], [0.5,0.5]
+        // Query[0] should match Doc[0] (dot ~0.9)
+        // Query[1] should match Doc[1] (dot ~0.9)
+        let q1 = [1.0, 0.0];
+        let q2 = [0.0, 1.0];
+        let d1 = [0.9, 0.1];
+        let d2 = [0.1, 0.9];
+        let d3 = [0.5, 0.5];
+        let query: &[&[f32]] = &[&q1, &q2];
+        let doc: &[&[f32]] = &[&d1, &d2, &d3];
+
+        let alignments = maxsim_alignments(query, doc);
+        assert_eq!(alignments.len(), 2);
+
+        // First query token matches first doc token
+        assert_eq!(alignments[0].0, 0); // query idx
+        assert_eq!(alignments[0].1, 0); // doc idx
+        assert!(alignments[0].2 > 0.8); // similarity
+
+        // Second query token matches second doc token
+        assert_eq!(alignments[1].0, 1); // query idx
+        assert_eq!(alignments[1].1, 1); // doc idx
+        assert!(alignments[1].2 > 0.8); // similarity
+    }
+
+    #[test]
+    fn test_maxsim_alignments_empty() {
+        let query: &[&[f32]] = &[];
+        let doc: &[&[f32]] = &[&[1.0, 0.0]];
+        assert!(maxsim_alignments(query, doc).is_empty());
+
+        let query: &[&[f32]] = &[&[1.0, 0.0]];
+        let doc: &[&[f32]] = &[];
+        assert!(maxsim_alignments(query, doc).is_empty());
+    }
+
+    #[test]
+    fn test_maxsim_alignments_consistency_with_maxsim() {
+        let q1 = [1.0, 0.0];
+        let q2 = [0.0, 1.0];
+        let d1 = [0.9, 0.1];
+        let d2 = [0.1, 0.9];
+        let query: &[&[f32]] = &[&q1, &q2];
+        let doc: &[&[f32]] = &[&d1, &d2];
+
+        let alignments = maxsim_alignments(query, doc);
+        let maxsim_score = maxsim(query, doc);
+
+        // Sum of alignment scores should equal MaxSim score
+        let alignment_sum: f32 = alignments.iter().map(|(_, _, score)| score).sum();
+        assert!(
+            (alignment_sum - maxsim_score).abs() < 1e-5,
+            "Alignment sum {} should equal MaxSim {}",
+            alignment_sum,
+            maxsim_score
+        );
+    }
+
+    #[test]
+    fn test_highlight_matches_basic() {
+        let q1 = [1.0, 0.0];
+        let q2 = [0.0, 1.0];
+        let d1 = [0.9, 0.1];
+        let d2 = [0.1, 0.9];
+        let d3 = [0.5, 0.5];
+        let query: &[&[f32]] = &[&q1, &q2];
+        let doc: &[&[f32]] = &[&d1, &d2, &d3];
+
+        // With threshold 0.7, should match first two doc tokens
+        let highlighted = highlight_matches(query, doc, 0.7);
+        assert_eq!(highlighted.len(), 2);
+        assert!(highlighted.contains(&0));
+        assert!(highlighted.contains(&1));
+        assert!(!highlighted.contains(&2)); // third token below threshold
+    }
+
+    #[test]
+    fn test_highlight_matches_threshold() {
+        let q1 = [1.0, 0.0];
+        let d1 = [0.9, 0.1];
+        let d2 = [0.5, 0.5];
+        let d3 = [0.1, 0.9];
+        let query: &[&[f32]] = &[&q1];
+        let doc: &[&[f32]] = &[&d1, &d2, &d3];
+
+        // High threshold: only first token
+        let high = highlight_matches(query, doc, 0.8);
+        assert_eq!(high, vec![0]);
+
+        // Low threshold: all tokens
+        let low = highlight_matches(query, doc, 0.0);
+        assert_eq!(low.len(), 3);
+    }
+
+    #[test]
+    fn test_highlight_matches_empty() {
+        let query: &[&[f32]] = &[];
+        let doc: &[&[f32]] = &[&[1.0, 0.0]];
+        assert!(highlight_matches(query, doc, 0.5).is_empty());
+
+        let query: &[&[f32]] = &[&[1.0, 0.0]];
+        let doc: &[&[f32]] = &[];
+        assert!(highlight_matches(query, doc, 0.5).is_empty());
+    }
+
+    #[test]
+    fn test_maxsim_alignments_vecs() {
+        let query = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+        let doc = vec![vec![0.9, 0.1], vec![0.1, 0.9]];
+
+        let alignments = maxsim_alignments_vecs(&query, &doc);
+        assert_eq!(alignments.len(), 2);
+        assert_eq!(alignments[0].0, 0);
+        assert_eq!(alignments[0].1, 0);
+        assert_eq!(alignments[1].0, 1);
+        assert_eq!(alignments[1].1, 1);
+    }
+
+    #[test]
+    fn test_highlight_matches_vecs() {
+        let query = vec![vec![1.0, 0.0]];
+        let doc = vec![vec![0.9, 0.1], vec![0.5, 0.5]];
+
+        let highlighted = highlight_matches_vecs(&query, &doc, 0.7);
+        assert_eq!(highlighted, vec![0]);
+    }
 
     #[test]
     fn test_dot_basic() {

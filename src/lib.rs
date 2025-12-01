@@ -48,8 +48,14 @@ pub mod prelude {
     // Score utilities
     pub use crate::simd::{normalize_maxsim, softmax_scores, top_k_indices};
 
+    // Token alignment and highlighting (ColBERT interpretability)
+    pub use crate::simd::{
+        highlight_matches, highlight_matches_vecs, maxsim_alignments, maxsim_alignments_cosine,
+        maxsim_alignments_cosine_vecs, maxsim_alignments_vecs,
+    };
+
     // `ColBERT`
-    pub use crate::colbert::{pool_tokens, rank as colbert_rank};
+    pub use crate::colbert::{alignments as colbert_alignments, highlight as colbert_highlight, pool_tokens, rank as colbert_rank};
 
     // Diversity
     pub use crate::diversity::{dpp, mmr, DppConfig, MmrConfig};

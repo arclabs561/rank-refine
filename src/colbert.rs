@@ -538,6 +538,58 @@ pub fn refine_with_config<I: Clone + Eq + std::hash::Hash>(
     results
 }
 
+/// Get token-level alignments for a query-document pair.
+///
+/// Returns `(query_token_idx, doc_token_idx, similarity_score)` for each query token,
+/// showing which document tokens match each query token. This enables highlighting
+/// and snippet extraction—core ColBERT features for interpretability.
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::colbert;
+///
+/// let query = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+/// let doc = vec![vec![0.9, 0.1], vec![0.1, 0.9]];
+///
+/// let alignments = colbert::alignments(&query, &doc);
+/// // Shows which query tokens match which doc tokens
+/// ```
+#[must_use]
+pub fn alignments(
+    query: &[Vec<f32>],
+    doc: &[Vec<f32>],
+) -> Vec<(usize, usize, f32)> {
+    simd::maxsim_alignments_vecs(query, doc)
+}
+
+/// Extract highlighted document token indices that match query tokens above threshold.
+///
+/// Useful for snippet extraction and highlighting in search results.
+/// Returns sorted unique indices of document tokens with high similarity to any query token.
+///
+/// # Arguments
+///
+/// * `query` - Query token embeddings
+/// * `doc` - Document token embeddings
+/// * `threshold` - Minimum similarity to include (typically 0.5-0.7 for normalized embeddings)
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::colbert;
+///
+/// let query = vec![vec![1.0, 0.0]];
+/// let doc = vec![vec![0.9, 0.1], vec![0.5, 0.5], vec![0.1, 0.9]];
+///
+/// let highlighted = colbert::highlight(&query, &doc, 0.7);
+/// // Returns [0] - index of token that matches well
+/// ```
+#[must_use]
+pub fn highlight(query: &[Vec<f32>], doc: &[Vec<f32>], threshold: f32) -> Vec<usize> {
+    simd::highlight_matches_vecs(query, doc, threshold)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Token Index (pre-computed embeddings for repeated scoring)
 // ─────────────────────────────────────────────────────────────────────────────
