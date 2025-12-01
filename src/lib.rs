@@ -48,6 +48,12 @@ pub mod prelude {
     // Score utilities
     pub use crate::simd::{normalize_maxsim, softmax_scores, top_k_indices};
 
+    // Query expansion and weighting utilities
+    pub use crate::simd::{bm25_weights, idf_weights};
+
+    // Multimodal and snippet utilities
+    pub use crate::simd::{extract_snippet_indices, patches_to_regions};
+
     // Token alignment and highlighting (ColBERT interpretability)
     pub use crate::simd::{
         alignments_for_doc_tokens, alignments_for_query_tokens, alignment_stats,

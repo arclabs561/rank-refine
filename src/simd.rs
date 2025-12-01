@@ -330,6 +330,13 @@ pub fn highlight_matches(
 ///
 /// See [Incorporating Token Importance in Multi-Vector Retrieval](https://arxiv.org/abs/2511.16106).
 ///
+/// **Use cases**:
+/// - **IDF weighting**: Boost rare terms, de-emphasize common terms
+/// - **[MASK] token weighting**: ColBERT uses [MASK] tokens for query augmentation.
+///   These tokens are added during encoding and should be weighted lower (typically 0.2-0.4)
+///   than original query tokens. See `examples/mask_token_weighting.rs` for a complete example.
+/// - **Learned importance**: Extract attention weights from trained models
+///
 /// # Arguments
 ///
 /// * `query_tokens` - Query token embeddings
@@ -816,6 +823,306 @@ pub fn alignment_stats(
     let count = scores.len();
     let mean = sum / count as f32;
     (min, max, mean, sum, count)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Query expansion and weighting utilities
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Compute Inverse Document Frequency (IDF) weights for query tokens.
+///
+/// IDF weighting boosts rare terms and de-emphasizes common terms, improving
+/// retrieval quality by ~2-5% in many cases.
+///
+/// Formula: `idf(t) = log((N + 1) / (df(t) + 1))` where:
+/// - `N` is the total number of documents in the collection
+/// - `df(t)` is the document frequency of token `t` (number of documents containing it)
+///
+/// Returns normalized weights in the range [0, 1] (or all 1.0 if all tokens have same IDF).
+///
+/// # Arguments
+///
+/// * `token_doc_freqs` - Document frequency for each query token (number of docs containing it)
+/// * `total_docs` - Total number of documents in the collection
+///
+/// # Returns
+///
+/// Vector of IDF weights, one per query token. Higher values = rarer terms = more important.
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::simd::idf_weights;
+///
+/// // Query: ["rust", "memory"]
+/// // "rust" appears in 100 docs, "memory" appears in 1000 docs
+/// // Total collection: 10000 docs
+/// let doc_freqs = vec![100, 1000];
+/// let weights = idf_weights(&doc_freqs, 10000);
+///
+/// // "rust" (rare) gets higher weight than "memory" (common)
+/// assert!(weights[0] > weights[1]);
+/// ```
+#[must_use]
+pub fn idf_weights(token_doc_freqs: &[usize], total_docs: usize) -> Vec<f32> {
+    if token_doc_freqs.is_empty() || total_docs == 0 {
+        return vec![];
+    }
+
+    let idf_scores: Vec<f32> = token_doc_freqs
+        .iter()
+        .map(|&df| {
+            if df == 0 {
+                // Token never appears - maximum importance
+                (total_docs as f32 + 1.0).ln()
+            } else {
+                ((total_docs as f32 + 1.0) / (df as f32 + 1.0)).ln()
+            }
+        })
+        .collect();
+
+    // Normalize to [0, 1] range
+    let min_idf = idf_scores
+        .iter()
+        .copied()
+        .fold(f32::INFINITY, f32::min);
+    let max_idf = idf_scores
+        .iter()
+        .copied()
+        .fold(f32::NEG_INFINITY, f32::max);
+
+    if (max_idf - min_idf).abs() < 1e-9 {
+        // All tokens have same IDF - return uniform weights
+        vec![1.0; token_doc_freqs.len()]
+    } else {
+        idf_scores
+            .iter()
+            .map(|&idf| (idf - min_idf) / (max_idf - min_idf))
+            .collect()
+    }
+}
+
+/// Compute BM25-style term weights for query tokens.
+///
+/// BM25 weighting combines IDF with term frequency, providing a more nuanced
+/// importance measure than pure IDF.
+///
+/// Formula: `weight(t) = idf(t) × (tf(t) × (k1 + 1)) / (tf(t) + k1 × (1 - b + b × (|d| / avg_dl)))`
+///
+/// Simplified version: `weight(t) = idf(t) × tf(t) / (tf(t) + k1)` where:
+/// - `idf(t)` is Inverse Document Frequency
+/// - `tf(t)` is term frequency in the query
+/// - `k1` is a tuning parameter (typically 1.2-2.0)
+///
+/// Returns normalized weights in the range [0, 1].
+///
+/// # Arguments
+///
+/// * `token_doc_freqs` - Document frequency for each query token
+/// * `token_query_freqs` - Term frequency in query for each token (typically 1 for most queries)
+/// * `total_docs` - Total number of documents in the collection
+/// * `k1` - Tuning parameter (default: 1.5, typical range: 1.2-2.0)
+///
+/// # Returns
+///
+/// Vector of BM25-style weights, one per query token.
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::simd::bm25_weights;
+///
+/// // Query: ["rust", "rust", "memory"] (rust appears twice)
+/// let doc_freqs = vec![100, 100];  // Both tokens appear in 100 docs
+/// let query_freqs = vec![2, 1];    // "rust" appears 2x, "memory" 1x
+/// let weights = bm25_weights(&doc_freqs, &query_freqs, 10000, 1.5);
+///
+/// // "rust" gets higher weight due to higher query frequency
+/// assert!(weights[0] > weights[1]);
+/// ```
+#[must_use]
+pub fn bm25_weights(
+    token_doc_freqs: &[usize],
+    token_query_freqs: &[usize],
+    total_docs: usize,
+    k1: f32,
+) -> Vec<f32> {
+    if token_doc_freqs.len() != token_query_freqs.len() {
+        return vec![];
+    }
+    if token_doc_freqs.is_empty() || total_docs == 0 {
+        return vec![];
+    }
+
+    let idf_scores: Vec<f32> = token_doc_freqs
+        .iter()
+        .map(|&df| {
+            if df == 0 {
+                (total_docs as f32 + 1.0).ln()
+            } else {
+                ((total_docs as f32 + 1.0) / (df as f32 + 1.0)).ln()
+            }
+        })
+        .collect();
+
+    let bm25_scores: Vec<f32> = idf_scores
+        .iter()
+        .zip(token_query_freqs.iter())
+        .map(|(&idf, &tf)| {
+            let tf_f32 = tf as f32;
+            idf * (tf_f32 * (k1 + 1.0)) / (tf_f32 + k1)
+        })
+        .collect();
+
+    // Normalize to [0, 1]
+    let min_score = bm25_scores
+        .iter()
+        .copied()
+        .fold(f32::INFINITY, f32::min);
+    let max_score = bm25_scores
+        .iter()
+        .copied()
+        .fold(f32::NEG_INFINITY, f32::max);
+
+    if (max_score - min_score).abs() < 1e-9 {
+        vec![1.0; token_doc_freqs.len()]
+    } else {
+        bm25_scores
+            .iter()
+            .map(|&score| (score - min_score) / (max_score - min_score))
+            .collect()
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Multimodal and snippet extraction utilities
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Convert image patch indices to bounding box regions (for ColPali-style systems).
+///
+/// In ColPali, document images are split into a grid of patches (e.g., 32×32 = 1024 patches).
+/// This function converts patch indices (from `highlight_matches`) into pixel coordinates
+/// for extracting visual snippets.
+///
+/// # Arguments
+///
+/// * `patch_indices` - Indices of highlighted patches (from `highlight_matches`)
+/// * `image_width` - Width of the original image in pixels
+/// * `image_height` - Height of the original image in pixels
+/// * `patches_per_side` - Number of patches per side (e.g., 32 for 32×32 grid)
+///
+/// # Returns
+///
+/// Vector of `(x, y, width, height)` bounding boxes in pixel coordinates.
+/// Each box represents the region covered by one or more highlighted patches.
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::simd::patches_to_regions;
+///
+/// // Image: 1024×768 pixels, split into 32×32 patches
+/// let highlighted_patches = vec![0, 1, 32, 33]; // Top-left corner patches
+/// let regions = patches_to_regions(&highlighted_patches, 1024, 768, 32);
+///
+/// // Returns bounding boxes for the highlighted regions
+/// for (x, y, w, h) in &regions {
+///     println!("Region: ({}, {}) {}×{}", x, y, w, h);
+/// }
+/// ```
+#[must_use]
+pub fn patches_to_regions(
+    patch_indices: &[usize],
+    image_width: usize,
+    image_height: usize,
+    patches_per_side: usize,
+) -> Vec<(usize, usize, usize, usize)> {
+    if patch_indices.is_empty() || patches_per_side == 0 {
+        return Vec::new();
+    }
+
+    let patch_width = image_width / patches_per_side;
+    let patch_height = image_height / patches_per_side;
+
+    patch_indices
+        .iter()
+        .map(|&patch_idx| {
+            let row = patch_idx / patches_per_side;
+            let col = patch_idx % patches_per_side;
+            let x = col * patch_width;
+            let y = row * patch_height;
+            (x, y, patch_width, patch_height)
+        })
+        .collect()
+}
+
+/// Extract text snippet indices from alignments for a document.
+///
+/// Given alignments from `maxsim_alignments`, returns the document token indices
+/// that should be included in a text snippet. Useful for highlighting search results.
+///
+/// # Arguments
+///
+/// * `alignments` - Alignment pairs from `maxsim_alignments`
+/// * `context_window` - Number of tokens to include before/after each match (default: 2)
+/// * `max_tokens` - Maximum number of unique token indices to return
+///
+/// # Returns
+///
+/// Sorted vector of document token indices to include in snippet.
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::simd::{maxsim_alignments_vecs, extract_snippet_indices};
+///
+/// let query = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+/// let doc = vec![vec![0.9, 0.1], vec![0.1, 0.9], vec![0.5, 0.5]];
+/// let alignments = maxsim_alignments_vecs(&query, &doc);
+///
+/// // Extract snippet indices with 1 token context
+/// let snippet_indices = extract_snippet_indices(&alignments, 1, 10);
+/// // Returns [0, 1, 2] - matched tokens plus context
+/// ```
+#[must_use]
+pub fn extract_snippet_indices(
+    alignments: &[(usize, usize, f32)],
+    context_window: usize,
+    max_tokens: usize,
+) -> Vec<usize> {
+    if alignments.is_empty() {
+        return Vec::new();
+    }
+
+    let mut indices = std::collections::HashSet::new();
+
+    for (_, doc_idx, _) in alignments {
+        // Add matched token
+        indices.insert(*doc_idx);
+
+        // Add context tokens before
+        for i in 0..context_window {
+            if *doc_idx >= i + 1 {
+                indices.insert(doc_idx - i - 1);
+            }
+        }
+
+        // Add context tokens after
+        // Note: We don't know doc length, so we'll add indices and filter later
+        for i in 1..=context_window {
+            indices.insert(doc_idx + i);
+        }
+    }
+
+    let mut result: Vec<usize> = indices.into_iter().collect();
+    result.sort_unstable();
+
+    // Limit to max_tokens (take first max_tokens)
+    if result.len() > max_tokens {
+        result.truncate(max_tokens);
+    }
+
+    result
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

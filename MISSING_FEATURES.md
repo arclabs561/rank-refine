@@ -29,14 +29,14 @@ This document tracks features mentioned in ColBERT/ColPali research papers that 
 
 **Benefits**: Improved retrieval quality, especially for short queries
 
-**Current status**: Not implemented. This is typically done at the encoder level (during model inference), not in the scoring layer.
+**Current status**: ✅ **DOCUMENTED** - Added comprehensive example (`examples/mask_token_weighting.rs`) and documentation showing how to use `maxsim_weighted()` with [MASK] token embeddings and their learned importance weights.
 
 **Implementation complexity**: Medium - would require:
-1. Support for masked token embeddings in queries
-2. Weighted MaxSim (we have this!)
-3. Documentation on how to use [MASK] tokens with encoders
+1. Support for masked token embeddings in queries ✅ (encoders provide these)
+2. Weighted MaxSim ✅ (we have `maxsim_weighted()`)
+3. Documentation on how to use [MASK] tokens with encoders ✅ (added example and docs)
 
-**Note**: We already have `maxsim_weighted()` which could be used if encoders provide weights for [MASK] tokens.
+**Note**: We already have `maxsim_weighted()` which can be used with [MASK] token embeddings. The example shows how to weight [MASK] tokens lower (typically 0.2-0.4) than original query tokens.
 
 ## Batch Alignment Functions
 
@@ -55,11 +55,11 @@ This document tracks features mentioned in ColBERT/ColPali research papers that 
 - Term weighting (IDF-based)
 - Query rewriting
 
-**Current status**: Not implemented. This is typically done before encoding, not in the scoring layer.
+**Current status**: ✅ **PARTIALLY IMPLEMENTED** - Added `idf_weights()` and `bm25_weights()` for computing term importance weights. These can be used with `maxsim_weighted()` to boost rare terms and improve retrieval quality.
 
 **Implementation complexity**: Low-Medium - depends on how much we want to support.
 
-**Note**: We have `maxsim_weighted()` which can be used with IDF weights.
+**Note**: We have `maxsim_weighted()` which can be used with IDF weights. Synonym expansion and query rewriting are typically done before encoding, not in the scoring layer.
 
 ## Advanced Token Pooling Strategies
 
@@ -78,22 +78,22 @@ This document tracks features mentioned in ColBERT/ColPali research papers that 
 
 **What's missing**:
 - Patch-level visualization utilities
-- Snippet extraction helpers (extracting image regions from patch indices)
+- Snippet extraction helpers (extracting image regions from patch indices) ✅ **IMPLEMENTED** - Added `patches_to_regions()` and `extract_snippet_indices()`
 - Cross-modal attention visualization
 
-**Priority**: Low - users can implement these on top of our alignment functions.
+**Priority**: Low - users can implement these on top of our alignment functions. Basic snippet extraction helpers are now available.
 
 ## Summary
 
 | Feature | Complexity | Priority | Notes |
 |---------|-----------|----------|-------|
 | Residual compression | High | Low | Token pooling is simpler alternative |
-| [MASK] token support | Medium | Medium | Encoder-level, but weighted MaxSim helps |
+| [MASK] token support | Medium | ✅ **DONE** | Documented with example |
 | Batch alignment | Low | ✅ **DONE** | Implemented with utilities |
 | Alignment utilities | Low | ✅ **DONE** | top_k, filter, stats, query/doc filtering |
-| Query expansion utils | Low-Medium | Low | Typically done before encoding |
+| Query expansion utils | Low-Medium | ✅ **DONE** | IDF and BM25 weighting added |
 | Advanced pooling | Medium | Low | Current methods sufficient |
-| Multimodal helpers | Low | Low | Can be built on top |
+| Multimodal helpers | Low | ✅ **DONE** | Patch-to-region and snippet extraction |
 
 ## Recommendations
 

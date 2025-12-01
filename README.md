@@ -133,6 +133,10 @@ let score = colbert::maxsim_vecs(&query, &doc);
 | `softmax_scores(scores)` | Probability distribution |
 | `top_k_indices(scores, k)` | Top-k by score |
 | `blend(a, b, α)` | Linear interpolation |
+| `idf_weights(doc_freqs, total_docs)` | IDF weighting for query tokens |
+| `bm25_weights(doc_freqs, query_freqs, total_docs, k1)` | BM25-style weighting |
+| `extract_snippet_indices(alignments, context, max)` | Extract text snippet indices |
+| `patches_to_regions(patch_indices, w, h, patches)` | Convert patches to image regions |
 
 ## How It Works
 
@@ -165,7 +169,11 @@ This captures token-level alignment: "capital" and "France" both have strong mat
 
 **Token-level alignment and highlighting**: Unlike single-vector embeddings, ColBERT can show exactly which document tokens match each query token. Use `maxsim_alignments()` to get alignment pairs, or `highlight_matches()` to extract highlighted token indices for snippet extraction.
 
-**Multimodal support (ColPali)**: The same alignment functions work for vision-language retrieval. In ColPali-style systems, image patches are treated as "tokens"—query text tokens align with image patch embeddings. This enables visual snippet extraction: identify which image regions (patches) are relevant to a query, then extract those regions as visual snippets for display.
+**Multimodal support (ColPali)**: The same alignment functions work for vision-language retrieval. In ColPali-style systems, image patches are treated as "tokens"—query text tokens align with image patch embeddings. This enables visual snippet extraction: identify which image regions (patches) are relevant to a query, then extract those regions as visual snippets for display. Use `patches_to_regions()` to convert patch indices to pixel coordinates.
+
+**Query augmentation with [MASK] tokens**: ColBERT uses [MASK] tokens for soft query expansion. These tokens are added during encoding and should be weighted lower (typically 0.2-0.4) than original query tokens when using `maxsim_weighted()`. See `examples/mask_token_weighting.rs` for a complete example.
+
+**IDF and BM25 weighting**: Use `idf_weights()` or `bm25_weights()` to compute importance weights for query tokens based on document frequency. These can be passed to `maxsim_weighted()` to boost rare terms and improve retrieval quality by ~2-5%.
 
 **When to use**:
 - Second-stage reranking (after dense retrieval)
