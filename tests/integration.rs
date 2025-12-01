@@ -909,19 +909,6 @@ fn e2e_alignment_cosine_vs_dot() {
         (cosine_sum - cosine_maxsim).abs() < 1e-4,
         "Cosine alignment sum should equal cosine MaxSim"
     );
-} raw_scores.iter().enumerate() {
-            if !top2.contains(&other_idx) {
-                assert!(
-                    raw_scores[idx] >= other_score,
-                    "Top-k index {} (score {}) should have score >= {} (idx {})",
-                    idx,
-                    raw_scores[idx],
-                    other_score,
-                    other_idx
-                );
-            }
-        }
-    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
