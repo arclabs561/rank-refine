@@ -996,10 +996,11 @@ pub fn bm25_weights(
     if (max_score - min_score).abs() < 1e-9 {
         vec![1.0; token_doc_freqs.len()]
     } else {
-        bm25_scores
-            .iter()
-            .map(|&score| (score - min_score) / (max_score - min_score))
-            .collect()
+        let mut weights = Vec::with_capacity(bm25_scores.len());
+        for &score in &bm25_scores {
+            weights.push((score - min_score) / (max_score - min_score));
+        }
+        weights
     }
 }
 
@@ -1119,7 +1120,10 @@ pub fn extract_snippet_indices(
         return Vec::new();
     }
 
-    let mut indices = std::collections::HashSet::new();
+    // Estimate capacity: each alignment adds 1 match + 2*context_window context tokens
+    let estimated_capacity = alignments.len() * (1 + 2 * context_window.min(10));
+    let capacity = estimated_capacity.min(max_tokens.max(1));
+    let mut indices = std::collections::HashSet::with_capacity(capacity);
 
     for (_, doc_idx, _) in alignments {
         // Add matched token
