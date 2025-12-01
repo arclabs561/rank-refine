@@ -278,6 +278,23 @@ What problem are you solving?
 
 See [REFERENCE.md](REFERENCE.md) for algorithm details and edge cases.
 
+## Multimodal Support (ColPali)
+
+This crate supports both text-only (ColBERT) and multimodal (ColPali) late interaction:
+
+- **Text-to-text**: Query text tokens align with document text tokens (standard ColBERT)
+- **Text-to-image**: Query text tokens align with image patch embeddings (ColPali-style)
+
+For ColPali systems, document images are split into patches (e.g., 32×32 grid = 1024 patches per page).
+Each patch becomes a "token" embedding. The same `maxsim_alignments()` and `highlight_matches()`
+functions work for both text and multimodal retrieval, enabling visual snippet extraction.
+
+**Visual snippet extraction**: In ColPali, identifying which image patches match query tokens enables
+extracting visual regions (snippets) from document images. These snippets can be displayed to users
+showing exactly which parts of a document image are relevant to their query.
+
+See `examples/multimodal_alignment.rs` for a demonstration.
+
 ## Features
 
 | Feature | Dependency | Purpose |
