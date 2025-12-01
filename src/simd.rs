@@ -1102,8 +1102,9 @@ pub fn extract_snippet_indices(
 
         // Add context tokens before
         for i in 0..context_window {
-            if *doc_idx >= i + 1 {
-                indices.insert(doc_idx - i - 1);
+            let offset = i + 1;
+            if *doc_idx >= offset {
+                indices.insert(doc_idx - offset);
             }
         }
 
