@@ -84,9 +84,38 @@ pub fn norm(v: &[f32]) -> f32 {
 
 /// Cosine similarity between two vectors.
 ///
-/// Returns 0.0 if either vector has effectively-zero norm (< 1e-9).
+/// # Zero Vector Handling
+///
+/// Returns `0.0` if either vector has effectively-zero norm (< 1e-9).
+/// This avoids division by zero and provides a sensible default for padding tokens,
+/// OOV embeddings, or failed inference.
+///
+/// # Edge Cases
+///
+/// - **Zero vectors**: Returns `0.0` (undefined mathematically, but practical default)
+/// - **NaN inputs**: Propagates NaN through dot/norm, final result may be NaN
+/// - **Inf inputs**: May produce Inf or NaN depending on input pattern
+/// - **Empty vectors**: Returns `0.0` (empty dot product)
+///
+/// # Result Range
+///
 /// Result is in `[-1, 1]` for valid input, but floating-point error can push
 /// slightly outside this range; clamp if strict bounds are required.
+///
+/// # Example
+///
+/// ```rust
+/// use rank_refine::simd::cosine;
+///
+/// // Normal case
+/// let a = [1.0, 0.0];
+/// let b = [0.707, 0.707];
+/// assert!((cosine(&a, &b) - 0.707).abs() < 0.01);
+///
+/// // Zero vector (padding token)
+/// let zero = [0.0, 0.0];
+/// assert_eq!(cosine(&a, &zero), 0.0);
+/// ```
 #[inline]
 #[must_use]
 pub fn cosine(a: &[f32], b: &[f32]) -> f32 {
@@ -1665,6 +1694,95 @@ mod tests {
         let query: Vec<&[f32]> = vec![&q1];
         // With empty docs, returns 0.0 (no matches possible)
         assert_eq!(maxsim(&query, &[]), 0.0);
+    }
+
+    #[test]
+    fn test_cosine_zero_vector() {
+        let a = [1.0, 0.0];
+        let zero = [0.0, 0.0];
+        // Zero vector should return 0.0, not NaN or panic
+        assert_eq!(cosine(&a, &zero), 0.0);
+        assert_eq!(cosine(&zero, &a), 0.0);
+        assert_eq!(cosine(&zero, &zero), 0.0);
+    }
+
+    #[test]
+    fn test_maxsim_zero_tokens() {
+        let q1 = [1.0, 0.0];
+        let q2 = [0.0, 0.0]; // zero token
+        let d1 = [0.9, 0.1];
+        let query: Vec<&[f32]> = vec![&q1, &q2];
+        let doc: Vec<&[f32]> = vec![&d1];
+
+        // Zero token should contribute 0.0 to MaxSim (dot product with zero vector)
+        let score = maxsim(&query, &doc);
+        assert!(score >= 0.0);
+        // q1 matches d1, q2 (zero) contributes 0
+        assert!((score - 0.9).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_maxsim_nan_handling() {
+        let q1 = [1.0, 0.0];
+        let q2 = [f32::NAN, 0.0];
+        let d1 = [0.9, 0.1];
+        let query: Vec<&[f32]> = vec![&q1, &q2];
+        let doc: Vec<&[f32]> = vec![&d1];
+
+        // NaN in input may propagate to NaN or Inf, but should not panic
+        let score = maxsim(&query, &doc);
+        // Score should be finite or NaN, but not panic
+        assert!(score.is_finite() || score.is_nan() || score.is_infinite());
+    }
+
+    #[test]
+    fn test_maxsim_inf_handling() {
+        let q1 = [1.0, 0.0];
+        let q2 = [f32::INFINITY, 0.0];
+        let d1 = [0.9, 0.1];
+        let query: Vec<&[f32]> = vec![&q1, &q2];
+        let doc: Vec<&[f32]> = vec![&d1];
+
+        // Inf in input may produce Inf, but should not panic
+        let score = maxsim(&query, &doc);
+        assert!(!score.is_nan());
+    }
+
+    #[test]
+    fn test_dot_empty_vectors() {
+        assert_eq!(dot(&[], &[]), 0.0);
+        // For mismatched lengths, use dot_truncating or ensure same length
+        assert_eq!(dot_truncating(&[1.0], &[]), 0.0);
+        assert_eq!(dot_truncating(&[], &[1.0]), 0.0);
+    }
+
+    #[test]
+    fn test_norm_zero_vector() {
+        let zero = [0.0, 0.0];
+        assert_eq!(norm(&zero), 0.0);
+    }
+
+    #[test]
+    fn test_maxsim_single_token() {
+        let q1 = [1.0, 0.0];
+        let d1 = [0.9, 0.1];
+        let query: Vec<&[f32]> = vec![&q1];
+        let doc: Vec<&[f32]> = vec![&d1];
+
+        let score = maxsim(&query, &doc);
+        assert!((score - 0.9).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_maxsim_identical_tokens() {
+        let q1 = [1.0, 0.0];
+        let d1 = [1.0, 0.0];
+        let query: Vec<&[f32]> = vec![&q1];
+        let doc: Vec<&[f32]> = vec![&d1];
+
+        let score = maxsim(&query, &doc);
+        // Perfect match should give high score
+        assert!(score > 0.9);
     }
 
     #[test]

@@ -32,6 +32,7 @@ pub mod colbert;
 pub mod crossencoder;
 pub mod diversity;
 pub mod embedding;
+pub mod explain;
 pub mod matryoshka;
 pub mod scoring;
 pub mod simd;
@@ -73,6 +74,12 @@ pub mod prelude {
 
     // Cross-encoder trait
     pub use crate::crossencoder::CrossEncoderModel;
+
+    // Explainability
+    pub use crate::explain::{
+        maxsim_explained, Candidate, MaxSimExplanation, RankedResult, RerankMethod, RerankerInput,
+        TokenMatch,
+    };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -124,6 +124,152 @@ impl MmrConfig {
     }
 }
 
+/// MMR lambda tuning utilities.
+///
+/// Helps find optimal lambda values for your use case.
+pub mod tuning {
+    use super::{mmr, MmrConfig};
+
+    /// Diagnostic report for MMR lambda selection.
+    #[derive(Debug, Clone)]
+    pub struct MmrDiagnostics {
+        /// Lambda value tested.
+        pub lambda: f32,
+        /// Average relevance of selected items.
+        pub avg_relevance: f32,
+        /// Average diversity (1 - max similarity) of selected items.
+        pub avg_diversity: f32,
+        /// Tradeoff score: lambda * relevance + (1-lambda) * diversity.
+        pub tradeoff_score: f32,
+    }
+
+    /// Test multiple lambda values and return diagnostics.
+    ///
+    /// # Arguments
+    ///
+    /// * `candidates` - `(id, relevance_score)` pairs
+    /// * `similarity` - Flattened row-major similarity matrix
+    /// * `lambda_values` - Lambda values to test
+    /// * `k` - Number of results to select
+    ///
+    /// # Returns
+    ///
+    /// Diagnostics for each lambda value, sorted by tradeoff score (descending).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use rank_refine::diversity::tuning::tune_lambda;
+    ///
+    /// let candidates = vec![("d1", 0.9), ("d2", 0.8), ("d3", 0.7)];
+    /// let similarity = vec![1.0, 0.9, 0.2, 0.9, 1.0, 0.3, 0.2, 0.3, 1.0];
+    ///
+    /// let diagnostics = tune_lambda(&candidates, &similarity, &[0.3, 0.5, 0.7], 2);
+    /// for diag in &diagnostics {
+    ///     println!("λ={:.1}: relevance={:.3}, diversity={:.3}",
+    ///              diag.lambda, diag.avg_relevance, diag.avg_diversity);
+    /// }
+    /// ```
+    #[must_use]
+    pub fn tune_lambda<I: Clone + Eq>(
+        candidates: &[(I, f32)],
+        similarity: &[f32],
+        lambda_values: &[f32],
+        k: usize,
+    ) -> Vec<MmrDiagnostics> {
+        let n = candidates.len();
+        let mut diagnostics = Vec::new();
+
+        for &lambda in lambda_values {
+            let config = MmrConfig::new(lambda, k);
+            let selected = mmr(candidates, similarity, config);
+
+            if selected.is_empty() {
+                continue;
+            }
+
+            // Compute average relevance
+            let avg_relevance: f32 =
+                selected.iter().map(|(_, score)| score).sum::<f32>() / selected.len() as f32;
+
+            // Compute average diversity (1 - max similarity to other selected items)
+            let mut diversity_sum = 0.0;
+            for (i, (id1, _)) in selected.iter().enumerate() {
+                let mut max_sim: f32 = 0.0;
+                for (j, (id2, _)) in selected.iter().enumerate() {
+                    if i != j {
+                        // Find indices in original candidates
+                        let idx1 = candidates.iter().position(|(id, _)| *id == *id1).unwrap();
+                        let idx2 = candidates.iter().position(|(id, _)| *id == *id2).unwrap();
+                        let sim = similarity[idx1 * n + idx2];
+                        max_sim = max_sim.max(sim);
+                    }
+                }
+                diversity_sum += 1.0 - max_sim;
+            }
+            let avg_diversity = diversity_sum / selected.len() as f32;
+
+            let tradeoff_score = lambda * avg_relevance + (1.0 - lambda) * avg_diversity;
+
+            diagnostics.push(MmrDiagnostics {
+                lambda,
+                avg_relevance,
+                avg_diversity,
+                tradeoff_score,
+            });
+        }
+
+        // Sort by tradeoff score descending
+        diagnostics.sort_by(|a, b| b.tradeoff_score.total_cmp(&a.tradeoff_score));
+        diagnostics
+    }
+
+    /// Adaptive lambda that decays as selection progresses.
+    ///
+    /// Starts with high lambda (prioritize relevance) and decays toward diversity.
+    ///
+    /// # Arguments
+    ///
+    /// * `candidates` - `(id, relevance_score)` pairs
+    /// * `similarity` - Flattened row-major similarity matrix
+    /// * `initial_lambda` - Starting lambda (typically 0.7-0.9)
+    /// * `final_lambda` - Ending lambda (typically 0.3-0.5)
+    /// * `k` - Number of results to select
+    ///
+    /// # Returns
+    ///
+    /// Selected documents using adaptive lambda strategy.
+    #[must_use]
+    pub fn mmr_adaptive<I: Clone + Eq>(
+        candidates: &[(I, f32)],
+        similarity: &[f32],
+        initial_lambda: f32,
+        final_lambda: f32,
+        k: usize,
+    ) -> Vec<(I, f32)> {
+        let mut selected = Vec::new();
+        let mut remaining: Vec<(I, f32)> = candidates.to_vec();
+
+        for step in 0..k.min(remaining.len()) {
+            // Linear decay from initial to final lambda
+            let progress = step as f32 / (k - 1).max(1) as f32;
+            let lambda = initial_lambda + (final_lambda - initial_lambda) * progress;
+
+            let config = MmrConfig::new(lambda, 1);
+            let step_selected = mmr(&remaining, similarity, config);
+
+            if let Some((id, score)) = step_selected.first() {
+                selected.push((id.clone(), *score));
+                remaining.retain(|(rid, _)| rid != id);
+            } else {
+                break;
+            }
+        }
+
+        selected
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // MMR with precomputed similarity matrix
 // ─────────────────────────────────────────────────────────────────────────────
