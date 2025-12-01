@@ -46,6 +46,27 @@
 //!
 //! See [REFERENCE.md](https://github.com/arclabs561/rank-refine/blob/master/REFERENCE.md) for the full algorithm.
 //!
+//! # Token-Level Alignment & Highlighting
+//!
+//! ColBERT's token-level architecture enables precise identification of which document
+//! tokens match each query token—a core feature for interpretability and snippet extraction.
+//!
+//! ```rust
+//! use rank_refine::colbert;
+//!
+//! let query = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+//! let doc = vec![vec![0.9, 0.1], vec![0.1, 0.9]];
+//!
+//! // Get alignment pairs: (query_idx, doc_idx, similarity)
+//! let alignments = colbert::alignments(&query, &doc);
+//!
+//! // Extract highlighted token indices for snippet extraction
+//! let highlighted = colbert::highlight(&query, &doc, 0.7);
+//! ```
+//!
+//! This capability distinguishes ColBERT from single-vector embeddings, which can only
+//! provide a global relevance score without showing which parts of the document contributed.
+//!
 //! # Token Pooling
 //!
 //! Storing one vector per token is expensive. Token pooling clusters similar
