@@ -13,6 +13,8 @@ authors = ["Arc <attobop@gmail.com>"]
 
 [dependencies]
 kodama = { version = "0.3", optional = true }
+serde = { version = "1.0", features = ["derive"], optional = true }
+# ort = { version = "2.0.0-rc.10", optional = true }  # TODO: Enable when stable
 
 [dev-dependencies]
 criterion = "0.5"
@@ -21,6 +23,8 @@ proptest = "1"
 [features]
 default = []
 hierarchical = ["kodama"]
+serde = ["dep:serde"]
+# ort = ["dep:ort"]  # TODO: Enable when ort 2.0 is stable
 
 [[bench]]
 name = "refine"

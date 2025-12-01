@@ -30,6 +30,8 @@
 
 pub mod colbert;
 pub mod crossencoder;
+// #[cfg(feature = "ort")]
+// pub mod crossencoder_ort;  // TODO: Enable when ort 2.0 is stable
 pub mod diversity;
 pub mod embedding;
 pub mod explain;

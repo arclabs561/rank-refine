@@ -10,6 +10,7 @@ use crate::simd;
 /// Shows which query tokens contributed most, which document tokens they matched,
 /// and optionally the text content of those tokens for human-readable explanations.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MaxSimExplanation {
     /// Total MaxSim score.
     pub total_score: f32,
@@ -25,6 +26,7 @@ pub struct MaxSimExplanation {
 ///
 /// Shows which document token a query token matched and how much it contributed.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TokenMatch {
     /// Query token index.
     pub query_token_idx: usize,
@@ -170,6 +172,7 @@ pub enum RerankMethod {
 
 /// Ranked result from reranking.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RankedResult<K> {
     /// Document identifier.
     pub id: K,
