@@ -1,6 +1,6 @@
 # rank-refine
 
-SIMD-accelerated similarity scoring for vector search and RAG. Provides MaxSim (ColBERT), cosine similarity, diversity selection (MMR, DPP), token pooling, and Matryoshka refinement.
+SIMD-accelerated similarity scoring for vector search and RAG. Provides MaxSim (ColBERT/ColPali), cosine similarity, diversity selection (MMR, DPP), token pooling, token-level alignment/highlighting, and Matryoshka refinement. Supports both text (ColBERT) and multimodal (ColPali) late interaction.
 
 [![CI](https://github.com/arclabs561/rank-refine/actions/workflows/ci.yml/badge.svg)](https://github.com/arclabs561/rank-refine/actions)
 [![Crates.io](https://img.shields.io/crates/v/rank-refine.svg)](https://crates.io/crates/rank-refine)
@@ -155,6 +155,8 @@ MaxSim = 0.9 + 0.8 + ... (sum of best matches)
 This captures token-level alignment: "capital" and "France" both have strong matches, even if they appear in different parts of the document. Single-vector embeddings average these signals and lose precision.
 
 **Token-level alignment and highlighting**: Unlike single-vector embeddings, ColBERT can show exactly which document tokens match each query token. Use `maxsim_alignments()` to get alignment pairs, or `highlight_matches()` to extract highlighted token indices for snippet extraction.
+
+**Multimodal support (ColPali)**: The same alignment functions work for vision-language retrieval. In ColPali-style systems, image patches are treated as "tokens"—query text tokens align with image patch embeddings. This enables visual snippet extraction: identify which image regions (patches) are relevant to a query, then extract those regions as visual snippets for display.
 
 **When to use**:
 - Second-stage reranking (after dense retrieval)

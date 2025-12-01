@@ -23,6 +23,10 @@
 //!
 //! This crate scores embeddings — it doesn't care where they came from.
 //!
+//! **Multimodal support**: For ColPali-style systems, image patches are treated as "tokens".
+//! The same `MaxSim` and alignment functions work for text-to-image retrieval:
+//! query text tokens align with image patch embeddings, enabling visual snippet extraction.
+//!
 //! # Assumptions
 //!
 //! - **L2-normalized vectors**: Most `ColBERT` models output unit-length embeddings.

@@ -164,10 +164,13 @@ pub fn maxsim_cosine(query_tokens: &[&[f32]], doc_tokens: &[&[f32]]) -> f32 {
 /// Token-level alignment information from `MaxSim` computation.
 ///
 /// Returns for each query token: `(query_token_idx, doc_token_idx, similarity_score)`
-/// where `doc_token_idx` is the document token with maximum similarity to that query token.
+/// where `doc_token_idx` is the document token (or image patch) with maximum similarity to that query token.
 ///
 /// This enables highlighting, snippet extraction, and interpretability—core ColBERT features
 /// that distinguish it from single-vector embeddings.
+///
+/// **Multimodal support**: For ColPali-style systems, `doc_tokens` are image patch embeddings.
+/// Alignment pairs show which image patches match each query token, enabling visual snippet extraction.
 ///
 /// # Returns
 ///
@@ -259,10 +262,13 @@ pub fn maxsim_alignments_cosine(
         .collect()
 }
 
-/// Extract highlighted document token indices that match query tokens.
+/// Extract highlighted document token (or image patch) indices that match query tokens.
 ///
 /// Returns unique document token indices that have high similarity to any query token.
 /// Useful for snippet extraction and highlighting in search results.
+///
+/// **Multimodal support**: For ColPali-style systems, returns highlighted image patch indices.
+/// These can be used to extract visual regions (snippets) from document images for display.
 ///
 /// # Arguments
 ///
