@@ -8,6 +8,9 @@ on:
 jobs:
   publish-npm:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -20,11 +23,15 @@ jobs:
         working-directory: rank-refine
         run: |
           wasm-pack build --target nodejs --out-dir pkg --scope arclabs561
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Ensure npm 11.5.1+ for OIDC
+        run: npm install -g npm@latest
       - name: Publish to npm
         working-directory: rank-refine/pkg
+        run: npm publish --access public
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ~/.npmrc
-          npm publish --access public
-
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
