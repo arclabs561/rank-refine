@@ -53,10 +53,16 @@ jobs:
           # Fix it to avoid normalization warning
           node -e "
             const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-            if (pkg.repository && pkg.repository.url && !pkg.repository.url.startsWith('git+')) {
-              pkg.repository.url = 'git+' + pkg.repository.url;
-              fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+            try {
+              const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+              if (pkg.repository && typeof pkg.repository === 'object' && pkg.repository.url && typeof pkg.repository.url === 'string' && !pkg.repository.url.startsWith('git+')) {
+                pkg.repository.url = 'git+' + pkg.repository.url;
+                fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+                console.log('✅ Fixed repository URL format');
+              }
+            } catch (error) {
+              console.error('⚠️  Failed to fix package.json:', error.message);
+              // Don't fail the workflow - npm will handle it
             }
           "
       - name: Setup Node.js
