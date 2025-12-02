@@ -11,6 +11,9 @@ categories = ["algorithms", "science", "mathematics"]
 repository = "https://github.com/arclabs561/rank-refine"
 readme = "README.md"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 kodama = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
