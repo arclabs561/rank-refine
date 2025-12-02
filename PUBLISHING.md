@@ -106,8 +106,8 @@ npm publish --access public
 After publishing, verify:
 
 1. **crates.io**: https://crates.io/crates/rank-refine
-2. **PyPI**: https://pypi.org/project/rank-refine-python/
-3. **npm** (if applicable): https://www.npmjs.com/package/rank-refine
+2. **PyPI**: https://pypi.org/project/rank-refine/
+3. **npm** (if applicable): https://www.npmjs.com/package/@arclabs561/rank-refine
 
 Test installation:
 
@@ -116,9 +116,9 @@ Test installation:
 cargo add rank-refine
 
 # Python
-pip install rank-refine-python
+pip install rank-refine
 
 # npm (if applicable)
-npm install rank-refine
+npm install @arclabs561/rank-refine
 ```
 
