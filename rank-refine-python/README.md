@@ -7,7 +7,7 @@ Python bindings for [`rank-refine`](../rank-refine/README.md) — SIMD-accelerat
 ### From PyPI
 
 ```bash
-pip install rank-refine-python
+pip install rank-refine
 ```
 
 ### From source

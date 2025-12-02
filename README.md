@@ -66,6 +66,78 @@ doc_tokens = [[0.9, 0.1], [0.1, 0.9]]
 score = rank_refine.maxsim_vecs(query_tokens, doc_tokens)
 ```
 
+### Node.js / WebAssembly
+
+**Install from npm:**
+
+```bash
+npm install @arclabs561/rank-refine
+```
+
+**Usage in Node.js:**
+
+```javascript
+const { cosine, maxsim_vecs } = require('@arclabs561/rank-refine');
+
+// Dense cosine similarity
+const query = new Float32Array([1.0, 0.0]);
+const doc = new Float32Array([0.707, 0.707]);
+const score = cosine(query, doc);
+
+// MaxSim (late interaction / ColBERT)
+const query_tokens = [
+  new Float32Array([1.0, 0.0]),
+  new Float32Array([0.0, 1.0])
+];
+const doc_tokens = [
+  new Float32Array([0.9, 0.1]),
+  new Float32Array([0.1, 0.9])
+];
+const maxsim_score = maxsim_vecs(query_tokens, doc_tokens);
+```
+
+**Usage in TypeScript:**
+
+```typescript
+import { cosine, maxsim_vecs } from '@arclabs561/rank-refine';
+
+const query = new Float32Array([1.0, 0.0]);
+const doc = new Float32Array([0.707, 0.707]);
+const score = cosine(query, doc);
+```
+
+**Usage in Browser (ES Modules):**
+
+```javascript
+import init, { cosine, maxsim_vecs } from '@arclabs561/rank-refine';
+
+async function computeSimilarity() {
+  // Initialize WASM module
+  await init();
+  
+  // Dense similarity
+  const query = new Float32Array([1.0, 0.0]);
+  const doc = new Float32Array([0.707, 0.707]);
+  const score = cosine(query, doc);
+  
+  // MaxSim for late interaction
+  const query_tokens = [
+    new Float32Array([1.0, 0.0]),
+    new Float32Array([0.0, 1.0])
+  ];
+  const doc_tokens = [
+    new Float32Array([0.9, 0.1]),
+    new Float32Array([0.1, 0.9])
+  ];
+  const maxsim_score = maxsim_vecs(query_tokens, doc_tokens);
+  
+  console.log("Cosine:", score);
+  console.log("MaxSim:", maxsim_score);
+}
+
+computeSimilarity();
+```
+
 ## Documentation
 
 - [Core crate documentation](rank-refine/README.md)

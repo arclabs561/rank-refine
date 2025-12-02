@@ -6,7 +6,30 @@ on:
   workflow_dispatch:
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check version consistency
+        run: |
+          ROOT_VERSION=$(grep '^version = ' Cargo.toml | cut -d'"' -f2)
+          PKG_VERSION=$(grep '"version"' rank-refine/pkg/package.json 2>/dev/null | cut -d'"' -f4 || echo "")
+          
+          if [ -n "$PKG_VERSION" ] && [ "$PKG_VERSION" != "$ROOT_VERSION" ]; then
+            echo "⚠️  Package.json version ($PKG_VERSION) differs from root ($ROOT_VERSION)"
+            echo "This is expected if package.json hasn't been rebuilt yet"
+          fi
+          
+          echo "✅ Version check complete: $ROOT_VERSION"
+      - name: Run tests
+        run: cargo test -p rank-refine --all-features
+      - name: Run clippy
+        run: cargo clippy --workspace --all-features -- -D warnings
+
   publish-npm:
+    needs: validate
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -23,6 +46,19 @@ jobs:
         working-directory: rank-refine
         run: |
           wasm-pack build --target nodejs --out-dir pkg --scope arclabs561
+      - name: Fix package.json repository URL format
+        working-directory: rank-refine/pkg
+        run: |
+          # npm prefers git+https:// format, wasm-pack generates https://
+          # Fix it to avoid normalization warning
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            if (pkg.repository && pkg.repository.url && !pkg.repository.url.startsWith('git+')) {
+              pkg.repository.url = 'git+' + pkg.repository.url;
+              fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+            }
+          "
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -33,5 +69,4 @@ jobs:
       - name: Publish to npm
         working-directory: rank-refine/pkg
         run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # OIDC trusted publisher configured - no token needed

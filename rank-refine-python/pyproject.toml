@@ -3,7 +3,7 @@ requires = ["maturin>=1.0,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "rank-refine-python"
+name = "rank-refine"
 version = "0.7.36"
 description = "Python bindings for rank-refine — SIMD-accelerated similarity scoring for vector search and RAG"
 readme = "README.md"

@@ -37,6 +37,9 @@ jobs:
           maturin develop --uv
           python -c "import rank_refine; print('Python bindings work!')"
         continue-on-error: true
+      - name: Report Python bindings status
+        if: failure()
+        run: echo "⚠️ Python bindings test failed - check logs above"
 
   msrv:
     runs-on: ubuntu-latest
