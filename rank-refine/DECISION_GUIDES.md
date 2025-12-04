@@ -67,16 +67,36 @@ Quick reference guides for choosing algorithms, parameters, and configurations.
          │                   │                  │ • Fastest        │
          │ • Best quality    │                  │ • Good for       │
          │ • Minimizes       │                  │   factor 2-3x   │
-         │   within-cluster  │                  │ • ~1-3% loss    │
+         │   within-cluster  │                  │ • ~1-3% loss     │
          │   variance        │                  │                  │
          │ • Slower          │                  │                  │
          └──────────────────┘                  └──────────────────┘
 ```
 
+**Why Hierarchical (Ward's Method) is Better for Quality:**
+
+1. **Minimizes Within-Cluster Variance**: Ward's method merges clusters to minimize the increase in within-cluster sum of squares. This means merged tokens are truly similar, preserving more semantic information.
+
+2. **Greedy is Local**: Greedy pooling merges the most similar pair at each step, but this can lead to suboptimal global clustering. A token might be merged with its nearest neighbor, but that neighbor might not be the best representative for a larger cluster.
+
+3. **Empirical Results**: Clavie et al. (2024) found hierarchical pooling maintains 0.5-1% better quality at factor 4x compared to greedy. The difference is small at factor 2x (~0.1%), but grows with more aggressive pooling.
+
+4. **When Greedy is Fine**: For factor 2-3x, greedy is fast and quality loss is minimal (~1%). Use hierarchical when:
+   - Pooling factor ≥ 4x
+   - Quality is critical
+   - You can afford the extra computation
+
+**Why Ward's Method Specifically:**
+
+Ward's linkage minimizes the increase in total within-cluster variance when merging clusters. This is optimal for token pooling because:
+- We want merged tokens to be semantically similar (low variance)
+- The centroid (mean) of a low-variance cluster is a good representative
+- Other linkage methods (complete, average) don't optimize for this
+
 **Pooling Factor Guidelines:**
 - **Factor 2x**: ~0% quality loss, 50% storage reduction (default)
 - **Factor 3x**: ~1% quality loss, 67% storage reduction
-- **Factor 4x**: ~3% quality loss, 75% storage reduction
+- **Factor 4x**: ~3% quality loss, 75% storage reduction (use hierarchical)
 - **Factor 8x+**: ~7% quality loss, only for extreme constraints
 
 **Strategy Selection:**

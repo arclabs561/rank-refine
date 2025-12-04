@@ -39,6 +39,9 @@ pub mod matryoshka;
 pub mod scoring;
 pub mod simd;
 
+#[cfg(feature = "wasm")]
+pub mod wasm;
+
 /// Common imports for reranking.
 ///
 /// ```rust

@@ -17,6 +17,8 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 kodama = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
+wasm-bindgen = { version = "0.2", optional = true }
+js-sys = { version = "0.3", optional = true }
 # ort = { version = "2.0.0-rc.10", optional = true }  # TODO: Enable when stable
 
 [dev-dependencies]
@@ -28,9 +30,14 @@ rank-eval = { path = "../../rank-eval" }
 default = []
 hierarchical = ["kodama"]
 serde = ["dep:serde"]
+wasm = ["dep:wasm-bindgen", "dep:js-sys"]
 # ort = ["dep:ort"]  # TODO: Enable when ort 2.0 is stable
 
 [[bench]]
 name = "refine"
+harness = false
+
+[[bench]]
+name = "comprehensive"
 harness = false
 
