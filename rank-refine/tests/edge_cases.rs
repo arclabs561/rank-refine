@@ -2,7 +2,7 @@
 
 use rank_refine::colbert;
 use rank_refine::simd::{maxsim, cosine};
-use rank_refine::diversity::mmr;
+use rank_refine::diversity::{mmr, MmrConfig};
 
 #[test]
 fn test_maxsim_empty_tokens() {
@@ -82,7 +82,8 @@ fn test_mmr_empty_candidates() {
     let candidates: Vec<(&str, f32)> = vec![];
     let similarity = vec![];
     
-    let selected = mmr(&candidates, &similarity, 5);
+    let config = MmrConfig::default().with_k(5);
+    let selected = mmr(&candidates, &similarity, config);
     assert!(selected.is_empty());
 }
 
@@ -99,7 +100,8 @@ fn test_mmr_k_greater_than_candidates() {
     ];
     
     // Requesting k=10 but only 2 candidates
-    let selected = mmr(&candidates, &similarity, 10);
+    let config = MmrConfig::default().with_k(10);
+    let selected = mmr(&candidates, &similarity, config);
     assert_eq!(selected.len(), 2);
 }
 
@@ -117,8 +119,9 @@ fn test_mmr_lambda_zero() {
         0.2, 0.3, 1.0,  // doc3 vs [doc1, doc2, doc3]
     ];
     
-    // Note: mmr doesn't take lambda parameter, uses default
-    let selected = mmr(&candidates, &similarity, 2);
+    // Use lambda=0.0 for pure diversity
+    let config = MmrConfig::default().with_k(2).with_lambda(0.0);
+    let selected = mmr(&candidates, &similarity, config);
     // Should select diverse items
     assert_eq!(selected.len(), 2);
 }
@@ -137,8 +140,9 @@ fn test_mmr_lambda_one() {
         0.2, 0.3, 1.0,
     ];
     
-    // Note: mmr doesn't take lambda parameter, uses default
-    let selected = mmr(&candidates, &similarity, 2);
+    // Use lambda=1.0 for pure relevance
+    let config = MmrConfig::default().with_k(2).with_lambda(1.0);
+    let selected = mmr(&candidates, &similarity, config);
     // Should select top 2
     assert_eq!(selected.len(), 2);
 }
@@ -157,7 +161,8 @@ fn test_mmr_identical_candidates() {
         1.0, 1.0, 1.0,
     ];
     
-    let selected = mmr(&candidates, &similarity, 2);
+    let config = MmrConfig::default().with_k(2);
+    let selected = mmr(&candidates, &similarity, config);
     assert_eq!(selected.len(), 2);
 }
 
@@ -166,12 +171,11 @@ fn test_normalize_zero_vector() {
     use rank_refine::embedding::normalize;
     
     // Zero vector should be handled
-    let mut vec = vec![0.0, 0.0, 0.0];
-    let result = normalize(&mut vec);
+    let vec = vec![0.0, 0.0, 0.0];
+    let result = normalize(&vec);
     
-    // Normalization of zero vector may return error or leave unchanged
-    // Behavior depends on implementation
-    assert!(result.is_ok() || result.is_err());
+    // normalize returns Option, zero vector should return None
+    assert!(result.is_none());
 }
 
 #[test]
