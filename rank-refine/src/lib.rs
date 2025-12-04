@@ -79,8 +79,8 @@ pub mod prelude {
 
     // Explainability
     pub use crate::explain::{
-        maxsim_explained, Candidate, MaxSimExplanation, RankedResult, RerankMethod, RerankerInput,
-        TokenMatch,
+        maxsim_explained, Candidate, FineGrainedConfig, FineGrainedResult, MaxSimExplanation,
+        RankedResult, RerankMethod, RerankerInput, TokenMatch, rerank_fine_grained,
     };
 }
 
@@ -105,6 +105,16 @@ pub enum RefineError {
         /// Actual dimension received.
         got: usize,
     },
+    /// Pool factor must be >= 1 (would cause division by zero).
+    InvalidPoolFactor {
+        /// The invalid pool factor that was provided.
+        pool_factor: usize,
+    },
+    /// Window size must be >= 1 (would cause division by zero).
+    InvalidWindowSize {
+        /// The invalid window size that was provided.
+        window_size: usize,
+    },
 }
 
 impl std::fmt::Display for RefineError {
@@ -119,6 +129,12 @@ impl std::fmt::Display for RefineError {
             ),
             Self::DimensionMismatch { expected, got } => {
                 write!(f, "expected {expected} dimensions, got {got}")
+            }
+            Self::InvalidPoolFactor { pool_factor } => {
+                write!(f, "pool_factor must be >= 1, got {pool_factor} (would cause division by zero)")
+            }
+            Self::InvalidWindowSize { window_size } => {
+                write!(f, "window_size must be >= 1, got {window_size} (would cause division by zero)")
             }
         }
     }

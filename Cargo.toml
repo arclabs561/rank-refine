@@ -1,5 +1,5 @@
 [workspace]
-members = ["rank-refine", "rank-refine-python", "fuzz"]
+members = ["rank-refine", "rank-refine-python", "fuzz", "test-e2e-local"]
 resolver = "2"
 default-members = ["rank-refine"]
 
@@ -13,7 +13,7 @@ authors = ["Arc <attobop@gmail.com>"]
 [workspace.dependencies]
 kodama = "0.3"
 serde = { version = "1.0", features = ["derive"] }
-pyo3 = { version = "0.21", features = ["extension-module", "abi3-py37"] }
+pyo3 = { version = "0.24", features = ["extension-module", "abi3-py37"] }
 criterion = "0.5"
 proptest = "1"
 libfuzzer-sys = "0.4"

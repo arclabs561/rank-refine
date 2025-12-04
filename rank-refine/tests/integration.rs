@@ -6,6 +6,9 @@
 use rank_refine::{
     colbert,
     crossencoder::CrossEncoderModel,
+    explain::{
+        rerank_fine_grained, Candidate, FineGrainedConfig, RerankerInput, RerankMethod,
+    },
     matryoshka,
     scoring::{
         blend, normalize_scores, AdaptivePooler, ClusteringPooler, DenseScorer,
@@ -454,7 +457,7 @@ fn e2e_clustering_pooling() {
     let original_count = tokens.len();
 
     // Clustering pooling (uses hierarchical when feature enabled)
-    let pooled = colbert::pool_tokens(&tokens, 2);
+    let pooled = colbert::pool_tokens(&tokens, 2).unwrap();
 
     // Verify reduction
     assert!(pooled.len() <= original_count, "Should reduce token count");
@@ -568,7 +571,7 @@ fn e2e_edge_cases() {
 
     // Pooling edge case: pooling still works with few tokens
     let few_tokens = vec![mock_dense_embed("one", DIM), mock_dense_embed("two", DIM)];
-    let pooled = colbert::pool_tokens_adaptive(&few_tokens, 10);
+    let pooled = colbert::pool_tokens_adaptive(&few_tokens, 10).unwrap();
     // Factor 10 on 2 tokens = target 1, so it pools down
     assert!(pooled.len() <= 2, "Should pool tokens");
     assert!(!pooled.is_empty(), "Should not produce empty result");
@@ -1471,4 +1474,227 @@ fn e2e_extract_snippet_edge_cases() {
     // Should only include token 5 once (HashSet deduplication)
     let count_5 = snippet.iter().filter(|&&x| x == 5).count();
     assert_eq!(count_5, 1, "Should deduplicate same token");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// E2E Test: Fine-Grained Scoring (0-10 integer scale)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn e2e_fine_grained_scoring_basic() {
+    const DIM: usize = 128;
+
+    let query_tokens = mock_token_embed("Rust memory safety", DIM);
+    let doc1_tokens = mock_token_embed("Rust is a systems programming language with memory safety", DIM);
+    let doc2_tokens = mock_token_embed("Python is great for data science", DIM);
+    let doc3_tokens = mock_token_embed("JavaScript runs in browsers", DIM);
+
+    let candidates = vec![
+        Candidate {
+            id: "doc1",
+            original_score: 0.8,
+            dense_embedding: None,
+            token_embeddings: Some(&doc1_tokens),
+            text: None,
+        },
+        Candidate {
+            id: "doc2",
+            original_score: 0.6,
+            dense_embedding: None,
+            token_embeddings: Some(&doc2_tokens),
+            text: None,
+        },
+        Candidate {
+            id: "doc3",
+            original_score: 0.4,
+            dense_embedding: None,
+            token_embeddings: Some(&doc3_tokens),
+            text: None,
+        },
+    ];
+
+    let input = RerankerInput {
+        query_dense: None,
+        query_tokens: Some(&query_tokens),
+        candidates,
+    };
+
+    let config = FineGrainedConfig::default();
+    let results = rerank_fine_grained(input, RerankMethod::MaxSim, config, 10);
+
+    // Should return results with fine-grained scores (0-10)
+    assert_eq!(results.len(), 3);
+    assert!(results[0].fine_score <= 10);
+    assert!(results[0].fine_score >= 0);
+    // doc1 should rank highest (most relevant)
+    assert_eq!(results[0].id, "doc1");
+    // Fine score should be higher for more relevant docs
+    assert!(results[0].fine_score >= results[1].fine_score);
+}
+
+#[test]
+fn e2e_fine_grained_scoring_boundaries() {
+    const DIM: usize = 128;
+
+    // Test with documents that should have different similarity scores
+    let query_tokens = mock_token_embed("Rust memory safety", DIM);
+    let high_sim_tokens = mock_token_embed("Rust memory safety guarantees", DIM); // Should be very similar
+    let low_sim_tokens = mock_token_embed("Python data science machine learning", DIM); // Different topic
+
+    let candidates = vec![
+        Candidate {
+            id: "high",
+            original_score: 0.99,
+            dense_embedding: None,
+            token_embeddings: Some(&high_sim_tokens),
+            text: None,
+        },
+        Candidate {
+            id: "low",
+            original_score: 0.01,
+            dense_embedding: None,
+            token_embeddings: Some(&low_sim_tokens),
+            text: None,
+        },
+    ];
+
+    let input = RerankerInput {
+        query_dense: None,
+        query_tokens: Some(&query_tokens),
+        candidates,
+    };
+
+    let config = FineGrainedConfig::default();
+    let results = rerank_fine_grained(input, RerankMethod::MaxSim, config, 10);
+
+    assert_eq!(results.len(), 2);
+    // High similarity should get higher fine score than low similarity
+    // (Note: mock embeddings may not produce extreme differences, so we just check ordering)
+    assert!(results[0].similarity_score >= results[1].similarity_score);
+    // Scores should be in valid range
+    assert!(results[0].fine_score <= 10);
+    assert!(results[1].fine_score >= 0);
+    assert!(results[0].fine_score >= 0);
+    assert!(results[1].fine_score <= 10);
+}
+
+#[test]
+fn e2e_fine_grained_scoring_probability_weighting() {
+    const DIM: usize = 128;
+
+    let query_tokens = mock_token_embed("Rust programming", DIM);
+    let doc1_tokens = mock_token_embed("Rust systems programming", DIM);
+    let doc2_tokens = mock_token_embed("Python programming", DIM);
+    let doc3_tokens = mock_token_embed("Java programming", DIM);
+
+    let candidates = vec![
+        Candidate {
+            id: "doc1",
+            original_score: 0.9,
+            dense_embedding: None,
+            token_embeddings: Some(&doc1_tokens),
+            text: None,
+        },
+        Candidate {
+            id: "doc2",
+            original_score: 0.7,
+            dense_embedding: None,
+            token_embeddings: Some(&doc2_tokens),
+            text: None,
+        },
+        Candidate {
+            id: "doc3",
+            original_score: 0.5,
+            dense_embedding: None,
+            token_embeddings: Some(&doc3_tokens),
+            text: None,
+        },
+    ];
+
+    let input = RerankerInput {
+        query_dense: None,
+        query_tokens: Some(&query_tokens),
+        candidates: candidates.clone(),
+    };
+
+    // With probability weighting (default)
+    let config_weighted = FineGrainedConfig::default();
+    let results_weighted = rerank_fine_grained(input.clone(), RerankMethod::MaxSim, config_weighted, 10);
+
+    // Without probability weighting
+    let config_linear = FineGrainedConfig::default().without_weighting();
+    let results_linear = rerank_fine_grained(input, RerankMethod::MaxSim, config_linear, 10);
+
+    // Both should work
+    assert_eq!(results_weighted.len(), 3);
+    assert_eq!(results_linear.len(), 3);
+    // Probability weighting may change relative scores
+    assert!(results_weighted[0].fine_score <= 10);
+    assert!(results_linear[0].fine_score <= 10);
+}
+
+#[test]
+fn e2e_fine_grained_scoring_custom_range() {
+    const DIM: usize = 128;
+
+    let query_tokens = mock_token_embed("test", DIM);
+    let doc_tokens = mock_token_embed("test document", DIM);
+
+    let candidates = vec![Candidate {
+        id: "doc1",
+        original_score: 0.5,
+        dense_embedding: None,
+        token_embeddings: Some(&doc_tokens),
+        text: None,
+    }];
+
+    let input = RerankerInput {
+        query_dense: None,
+        query_tokens: Some(&query_tokens),
+        candidates,
+    };
+
+    // Custom score range
+    let config = FineGrainedConfig::new(-1.0, 1.0);
+    let results = rerank_fine_grained(input, RerankMethod::MaxSim, config, 10);
+
+    assert_eq!(results.len(), 1);
+    assert!(results[0].fine_score <= 10);
+    assert!(results[0].fine_score >= 0);
+}
+
+#[test]
+fn e2e_fine_grained_scoring_top_k() {
+    const DIM: usize = 128;
+
+    let query_tokens = mock_token_embed("test", DIM);
+    // Store token embeddings in a vector to keep them alive
+    let mut doc_tokens_vec: Vec<Vec<Vec<f32>>> = Vec::new();
+    for i in 0..10 {
+        let doc_tokens = mock_token_embed(&format!("document {}", i), DIM);
+        doc_tokens_vec.push(doc_tokens);
+    }
+
+    let mut candidates = Vec::new();
+    for (i, doc_tokens) in doc_tokens_vec.iter().enumerate() {
+        candidates.push(Candidate {
+            id: format!("doc{}", i),
+            original_score: 0.5,
+            dense_embedding: None,
+            token_embeddings: Some(doc_tokens),
+            text: None,
+        });
+    }
+
+    let input = RerankerInput {
+        query_dense: None,
+        query_tokens: Some(&query_tokens),
+        candidates,
+    };
+
+    let config = FineGrainedConfig::default();
+    let results = rerank_fine_grained(input, RerankMethod::MaxSim, config, 5);
+
+    // Should only return top 5
+    assert_eq!(results.len(), 5);
 }

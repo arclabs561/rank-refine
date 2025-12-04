@@ -1,7 +1,14 @@
 /target
 Cargo.lock
 /mutants.out*
+/mutants.out.old
 /proptest-regressions
 OUTREACH.md
 /archive
 MISSING_FEATURES.md
+# Build artifacts
+**/pkg/
+*.wasm
+*.so
+*.dylib
+*.dll

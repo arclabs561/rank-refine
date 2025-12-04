@@ -38,13 +38,13 @@ fuzz_target!(|data: &[u8]| {
     }
 
     // Test all pooling methods - they should not panic
-    let _ = colbert::pool_tokens(&tokens, pool_factor);
-    let _ = colbert::pool_tokens_sequential(&tokens, pool_factor);
-    let _ = colbert::pool_tokens_adaptive(&tokens, pool_factor);
+    let _ = colbert::pool_tokens(&tokens, pool_factor).ok();
+    let _ = colbert::pool_tokens_sequential(&tokens, pool_factor).ok();
+    let _ = colbert::pool_tokens_adaptive(&tokens, pool_factor).ok();
 
     // Test with protected tokens (if we have enough)
     if n_tokens > 1 {
         let protected = (data.get(offset).copied().unwrap_or(0) as usize) % n_tokens;
-        let _ = colbert::pool_tokens_with_protected(&tokens, pool_factor, protected);
+        let _ = colbert::pool_tokens_with_protected(&tokens, pool_factor, protected).ok();
     }
 });

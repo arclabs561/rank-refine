@@ -2,14 +2,21 @@
 //!
 //! Demonstrates the complete pipeline: Retrieve → Fuse → Refine → Top-K
 //!
-//! **Note**: This example requires `rank-fusion` as a dependency.
-//! Add to Cargo.toml: `rank-fusion = { path = "../rank-fusion" }`
+//! **Note**: This is a **simulated** integration example.
+//! 
+//! For a real integration, add `rank-fusion` as a dependency:
+//! ```toml
+//! [dependencies]
+//! rank-fusion = "0.1"
+//! ```
+//! 
+//! Then uncomment the imports and replace simulated fusion with real calls:
+//! ```rust
+//! use rank_fusion::explain::{rrf_explain, RetrieverId};
+//! use rank_fusion::RrfConfig;
+//! ```
 //!
 //! Run: `cargo run --example fusion_to_refine`
-
-// Uncomment when rank-fusion is available as a dependency:
-// use rank_fusion::explain::{rrf_explain, RetrieverId};
-// use rank_fusion::RrfConfig;
 use rank_refine::explain::{rerank_batch, Candidate, RerankMethod, RerankerInput};
 
 fn main() {

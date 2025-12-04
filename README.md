@@ -34,7 +34,27 @@ let score = simd::maxsim_vecs(&query, &doc);
 
 ### Python
 
-**Using uv (recommended):**
+**Install from PyPI:**
+
+```bash
+pip install rank-refine
+```
+
+```python
+import rank_refine
+
+# Dense cosine similarity
+query = [1.0, 0.0]
+doc = [0.707, 0.707]
+score = rank_refine.cosine(query, doc)
+
+# MaxSim (late interaction)
+query_tokens = [[1.0, 0.0], [0.0, 1.0]]
+doc_tokens = [[0.9, 0.1], [0.1, 0.9]]
+score = rank_refine.maxsim_vecs(query_tokens, doc_tokens)
+```
+
+**For development/contributing:**
 
 ```bash
 cd rank-refine-python
@@ -50,20 +70,6 @@ maturin develop --uv
 cd rank-refine-python
 pip install maturin
 maturin develop --release
-```
-
-```python
-import rank_refine
-
-# Dense cosine similarity
-query = [1.0, 0.0]
-doc = [0.707, 0.707]
-score = rank_refine.cosine(query, doc)
-
-# MaxSim (late interaction)
-query_tokens = [[1.0, 0.0], [0.0, 1.0]]
-doc_tokens = [[0.9, 0.1], [0.1, 0.9]]
-score = rank_refine.maxsim_vecs(query_tokens, doc_tokens)
 ```
 
 ### Node.js / WebAssembly

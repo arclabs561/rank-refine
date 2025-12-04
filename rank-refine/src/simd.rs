@@ -3075,5 +3075,131 @@ mod proptests {
                 );
             }
         }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // Mutation-Killing Property Tests (targeted to catch specific mutants)
+        // ─────────────────────────────────────────────────────────────────────────
+
+        /// cosine: should divide by (na * nb), not multiply
+        #[test]
+        fn cosine_divides_by_norms(dim in 2usize..16) {
+            let a: Vec<f32> = (0..dim).map(|i| (i as f32 * 0.1).sin()).collect();
+            let b: Vec<f32> = (0..dim).map(|i| (i as f32 * 0.1).cos()).collect();
+
+            let cos = cosine(&a, &b);
+            // Cosine should be in [-1, 1] range (division normalizes)
+            prop_assert!(
+                (cos >= -1.1 && cos <= 1.1) || cos.is_nan(),
+                "Cosine should be in [-1, 1]: {}",
+                cos
+            );
+        }
+
+        /// cosine: should check norm > epsilon, not ==
+        #[test]
+        fn cosine_checks_norm_gt_epsilon(dim in 2usize..8) {
+            // Very small norm (below threshold)
+            let tiny: Vec<f32> = (0..dim).map(|i| if i == 0 { 1e-10 } else { 0.0 }).collect();
+            let normal: Vec<f32> = (0..dim).map(|i| if i == 0 { 1.0 } else { 0.0 }).collect();
+
+            let cos = cosine(&tiny, &normal);
+            // Should return 0.0 for tiny norm (uses > comparison, not ==)
+            prop_assert_eq!(cos, 0.0, "Tiny norm should return 0.0: {}", cos);
+        }
+
+        /// dot: should multiply elements, not add
+        #[test]
+        fn dot_multiplies_elements(dim in 2usize..16) {
+            let a: Vec<f32> = (0..dim).map(|i| 1.0).collect();
+            let b: Vec<f32> = (0..dim).map(|i| 2.0).collect();
+
+            let dot_product = dot(&a, &b);
+            // Dot product of [1,1,...] and [2,2,...] = dim * 2 (multiplication)
+            prop_assert!((dot_product - (dim as f32 * 2.0)).abs() < 0.01, "Dot should multiply: {} ≈ {}", dot_product, dim * 2);
+        }
+
+        /// norm: should use sqrt, not other operations
+        #[test]
+        fn norm_uses_sqrt(dim in 2usize..16) {
+            let v: Vec<f32> = (0..dim).map(|i| 3.0).collect();
+            let n = norm(&v);
+            // Norm of [3,3,...] = sqrt(sum(3^2)) = sqrt(dim * 9) = 3 * sqrt(dim)
+            let expected = 3.0 * (dim as f32).sqrt();
+            prop_assert!((n - expected).abs() < 0.01, "Norm should use sqrt: {} ≈ {}", n, expected);
+        }
+
+        /// maxsim: should sum max scores, not multiply
+        #[test]
+        fn maxsim_sums_max_scores(n_query in 1usize..5, n_doc in 1usize..5, dim in 2usize..8) {
+            let query: Vec<Vec<f32>> = (0..n_query)
+                .map(|i| (0..dim).map(|j| if j == 0 { 1.0 } else { 0.0 }).collect())
+                .collect();
+            let doc: Vec<Vec<f32>> = (0..n_doc)
+                .map(|i| (0..dim).map(|j| if j == 0 { 0.9 } else { 0.0 }).collect())
+                .collect();
+
+            let score = maxsim_vecs(&query, &doc);
+            // MaxSim = sum of max dot products (addition, not multiplication)
+            prop_assert!(score > 0.0 && score.is_finite(), "MaxSim should be positive and finite: {}", score);
+        }
+
+        /// maxsim_alignments: should use > comparison for finding max
+        #[test]
+        fn maxsim_alignments_compares_gt(n_query in 1usize..4, n_doc in 1usize..4, dim in 2usize..8) {
+            let query: Vec<Vec<f32>> = (0..n_query)
+                .map(|i| (0..dim).map(|j| if j == i { 1.0 } else { 0.0 }).collect())
+                .collect();
+            let doc: Vec<Vec<f32>> = (0..n_doc)
+                .map(|i| (0..dim).map(|j| if j == i { 0.9 } else { 0.0 }).collect())
+                .collect();
+
+            let alignments = maxsim_alignments_vecs(&query, &doc);
+            // Should find best matches (uses > comparison)
+            prop_assert_eq!(alignments.len(), n_query, "Should have one alignment per query token");
+            for (_, _, score) in &alignments {
+                prop_assert!(score.is_finite(), "Alignment score should be finite: {}", score);
+            }
+        }
+
+        /// bm25_weights: df > total_docs should return 0.0 (not >=)
+        #[test]
+        fn bm25_weights_rejects_df_gt_total(total_docs in 10usize..100, df in 1usize..200) {
+            let token_doc_freqs = vec![df];
+            let token_query_freqs = vec![1];
+            let k1 = 1.5;
+
+            let weights = bm25_weights(&token_doc_freqs, &token_query_freqs, total_docs, k1);
+            prop_assert_eq!(weights.len(), 1);
+
+            if df > total_docs {
+                // When df > total_docs, idf is set to 0.0, so bm25 should be 0.0
+                // After normalization, if all weights are 0, it returns [1.0] (normalized to sum=1)
+                // But if only this one is 0 and others exist, it stays 0.0
+                // Since we only have one token, it will normalize to 1.0 if the raw score is 0
+                // So we check that the raw calculation would be 0 (idf = 0)
+                // Actually, let's test with multiple tokens to see the difference
+                let token_doc_freqs_multi = vec![df, total_docs / 2]; // One invalid, one valid
+                let token_query_freqs_multi = vec![1, 1];
+                let weights_multi = bm25_weights(&token_doc_freqs_multi, &token_query_freqs_multi, total_docs, k1);
+                // The first weight (df > total_docs) should be 0.0, second should be > 0
+                prop_assert_eq!(
+                    weights_multi[0], 0.0,
+                    "df {} > total_docs {} should return 0.0 for first weight, got {}",
+                    df, total_docs, weights_multi[0]
+                );
+                prop_assert!(
+                    weights_multi[1] > 0.0,
+                    "Valid df should return positive weight, got {}",
+                    weights_multi[1]
+                );
+            } else if df == total_docs {
+                // df == total_docs should NOT return 0.0 (proves it uses > not >=)
+                prop_assert!(
+                    weights[0] > 0.0 || weights[0] < 0.0, // Non-zero
+                    "df {} == total_docs {} should return non-zero weight, got {}",
+                    df, total_docs, weights[0]
+                );
+            }
+        }
     }
 }

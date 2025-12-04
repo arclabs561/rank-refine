@@ -34,8 +34,8 @@ fn main() {
     println!("Original: {} tokens", doc_tokens.len());
 
     // Pool with different methods
-    let pooled_cluster = pool_tokens(&doc_tokens, 4);
-    let pooled_seq = pool_tokens_sequential(&doc_tokens, 4);
+    let pooled_cluster = pool_tokens(&doc_tokens, 4).unwrap();
+    let pooled_seq = pool_tokens_sequential(&doc_tokens, 4).unwrap();
 
     println!("Clustered: {} tokens", pooled_cluster.len());
     println!("Sequential: {} tokens", pooled_seq.len());

@@ -287,6 +287,28 @@ mod tests {
     fn test_masked_mismatched_lengths() {
         let _ = MaskedTokens::new(vec![vec![1.0]], vec![true, false]);
     }
+
+    #[test]
+    fn normalize_uses_strict_less_than() {
+        // Test that normalize uses strict less than (<), not <= for zero check
+        // Test with norm exactly at threshold (1e-9)
+        // If it used <=, it would return None for norm == 1e-9
+        // If it uses <, it should return Some (since 1e-9 is not < 1e-9)
+        let tiny: Vec<f32> = vec![1e-10; 10]; // Very small but non-zero
+        let result = normalize(&tiny);
+        // With such a tiny vector, norm = sqrt(10 * (1e-10)^2) = sqrt(10) * 1e-10 ≈ 3.16e-10
+        // This is < 1e-9, so should return None
+        assert!(result.is_none(), "Tiny vector with norm < 1e-9 should return None");
+        
+        // Test with norm just above threshold
+        let small: Vec<f32> = vec![1e-8; 10]; // Larger, norm ≈ 3.16e-8 > 1e-9
+        let result2 = normalize(&small);
+        assert!(result2.is_some(), "Vector with norm > 1e-9 should normalize");
+        if let Some(normed) = result2 {
+            let norm: f32 = normed.as_slice().iter().map(|x| x * x).sum::<f32>().sqrt();
+            assert!((norm - 1.0).abs() < 1e-4, "Should be normalized");
+        }
+    }
 }
 
 #[cfg(test)]

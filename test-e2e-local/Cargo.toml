@@ -1,0 +1,27 @@
+[package]
+name = "test-e2e-local"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+# Simulate published dependencies
+rank-refine = { path = "../rank-refine", version = "0.7.36" }
+rank-eval = { path = "../../rank-eval", version = "0.1.0" }
+
+# Test utilities
+tempfile = "3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[[bin]]
+name = "test-refine-basic"
+path = "src/bin/test_refine_basic.rs"
+
+[[bin]]
+name = "test-refine-eval-integration"
+path = "src/bin/test_refine_eval_integration.rs"
+

@@ -115,7 +115,7 @@ fn bench_pool_tokens(c: &mut Criterion) {
             BenchmarkId::new("clustering_f2", n_tokens),
             &tokens,
             |bench, toks| {
-                bench.iter(|| black_box(colbert::pool_tokens(toks, 2)));
+                bench.iter(|| black_box(colbert::pool_tokens(toks, 2).unwrap()));
             },
         );
 
@@ -124,7 +124,7 @@ fn bench_pool_tokens(c: &mut Criterion) {
             BenchmarkId::new("clustering_f3", n_tokens),
             &tokens,
             |bench, toks| {
-                bench.iter(|| black_box(colbert::pool_tokens(toks, 3)));
+                bench.iter(|| black_box(colbert::pool_tokens(toks, 3).unwrap()));
             },
         );
 
@@ -133,7 +133,7 @@ fn bench_pool_tokens(c: &mut Criterion) {
             BenchmarkId::new("sequential_f2", n_tokens),
             &tokens,
             |bench, toks| {
-                bench.iter(|| black_box(colbert::pool_tokens_sequential(toks, 2)));
+                bench.iter(|| black_box(colbert::pool_tokens_sequential(toks, 2).unwrap()));
             },
         );
 
@@ -142,7 +142,7 @@ fn bench_pool_tokens(c: &mut Criterion) {
             BenchmarkId::new("sequential_f4", n_tokens),
             &tokens,
             |bench, toks| {
-                bench.iter(|| black_box(colbert::pool_tokens_sequential(toks, 4)));
+                bench.iter(|| black_box(colbert::pool_tokens_sequential(toks, 4).unwrap()));
             },
         );
 
@@ -151,7 +151,7 @@ fn bench_pool_tokens(c: &mut Criterion) {
             BenchmarkId::new("adaptive_f2", n_tokens),
             &tokens,
             |bench, toks| {
-                bench.iter(|| black_box(colbert::pool_tokens_adaptive(toks, 2)));
+                bench.iter(|| black_box(colbert::pool_tokens_adaptive(toks, 2).unwrap()));
             },
         );
 
@@ -159,7 +159,7 @@ fn bench_pool_tokens(c: &mut Criterion) {
             BenchmarkId::new("adaptive_f4", n_tokens),
             &tokens,
             |bench, toks| {
-                bench.iter(|| black_box(colbert::pool_tokens_adaptive(toks, 4)));
+                bench.iter(|| black_box(colbert::pool_tokens_adaptive(toks, 4).unwrap()));
             },
         );
     }
@@ -183,14 +183,14 @@ fn bench_maxsim_pooled(c: &mut Criterion) {
     });
 
     // Pooled: factor 2 (64 tokens)
-    let pooled_2 = colbert::pool_tokens(&doc, 2);
+    let pooled_2 = colbert::pool_tokens(&doc, 2).unwrap();
     let p2_refs: Vec<&[f32]> = pooled_2.iter().map(Vec::as_slice).collect();
     g.bench_function("pool_f2_64tok", |bench| {
         bench.iter(|| black_box(simd::maxsim(&query_refs, &p2_refs)));
     });
 
     // Pooled: factor 4 (32 tokens)
-    let pooled_4 = colbert::pool_tokens_sequential(&doc, 4);
+    let pooled_4 = colbert::pool_tokens_sequential(&doc, 4).unwrap();
     let p4_refs: Vec<&[f32]> = pooled_4.iter().map(Vec::as_slice).collect();
     g.bench_function("pool_f4_32tok", |bench| {
         bench.iter(|| black_box(simd::maxsim(&query_refs, &p4_refs)));
@@ -281,7 +281,7 @@ fn bench_edge_cases(c: &mut Criterion) {
     // Pooling edge cases
     let tokens_2 = vec![random_vec(128, 1), random_vec(128, 2)];
     g.bench_function("pool_tokens_factor_2_small", |bench| {
-        bench.iter(|| black_box(colbert::pool_tokens(&tokens_2, 2)));
+        bench.iter(|| black_box(colbert::pool_tokens(&tokens_2, 2).unwrap()));
     });
 
     g.finish();

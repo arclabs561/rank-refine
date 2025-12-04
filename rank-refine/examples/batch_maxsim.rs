@@ -51,7 +51,7 @@ fn main() {
     // Raw scores (sum of max similarities)
     println!("\nTop 5 raw scores:");
     let mut indexed: Vec<_> = scores.iter().enumerate().collect();
-    indexed.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap());
+    indexed.sort_by(|a, b| b.1.total_cmp(a.1));
     for (idx, score) in indexed.iter().take(5) {
         println!("  doc_{idx}: {score:.2}");
     }
@@ -65,7 +65,7 @@ fn main() {
 
     println!("\nTop 5 normalized [0,1]:");
     let mut indexed: Vec<_> = normalized.iter().enumerate().collect();
-    indexed.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap());
+    indexed.sort_by(|a, b| b.1.total_cmp(a.1));
     for (idx, score) in indexed.iter().take(5) {
         println!("  doc_{idx}: {score:.4}");
     }
@@ -75,7 +75,7 @@ fn main() {
 
     println!("\nTop 5 softmax probabilities:");
     let mut indexed: Vec<_> = probs.iter().enumerate().collect();
-    indexed.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap());
+    indexed.sort_by(|a, b| b.1.total_cmp(a.1));
     for (idx, prob) in indexed.iter().take(5) {
         println!("  doc_{idx}: {:.2}%", *prob * 100.0);
     }

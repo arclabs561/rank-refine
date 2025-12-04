@@ -331,7 +331,7 @@ impl Pooler for SequentialPooler {
             return tokens.to_vec();
         }
         let window = tokens.len().div_ceil(target_count);
-        crate::colbert::pool_tokens_sequential(tokens, window)
+        crate::colbert::pool_tokens_sequential(tokens, window).unwrap_or_else(|_| tokens.to_vec())
     }
 }
 
@@ -345,7 +345,7 @@ impl Pooler for ClusteringPooler {
             return tokens.to_vec();
         }
         let factor = tokens.len().div_ceil(target_count);
-        crate::colbert::pool_tokens(tokens, factor)
+        crate::colbert::pool_tokens(tokens, factor).unwrap_or_else(|_| tokens.to_vec())
     }
 }
 
@@ -359,7 +359,7 @@ impl Pooler for AdaptivePooler {
             return tokens.to_vec();
         }
         let factor = tokens.len().div_ceil(target_count);
-        crate::colbert::pool_tokens_adaptive(tokens, factor)
+        crate::colbert::pool_tokens_adaptive(tokens, factor).unwrap_or_else(|_| tokens.to_vec())
     }
 }
 
@@ -610,6 +610,29 @@ mod proptests {
         fn blend_alpha_one(a in -100.0f32..100.0, b in -100.0f32..100.0) {
             let blended = blend(a, b, 1.0);
             prop_assert!((blended - a).abs() < 1e-5);
+        }
+
+        /// pool_by_factor uses division, not multiplication
+        #[test]
+        fn pool_by_factor_uses_division(n_tokens in 10usize..50, factor in 2usize..10) {
+            let tokens: Vec<Vec<f32>> = (0..n_tokens)
+                .map(|i| vec![i as f32; 4])
+                .collect();
+            let pooler = ClusteringPooler;
+            let pooled = pooler.pool_by_factor(&tokens, factor);
+            // Should reduce by factor (division), not multiply
+            let expected_count = (n_tokens / factor).max(1);
+            prop_assert!(
+                pooled.len() <= expected_count + 1, // Allow small rounding
+                "pool_by_factor should divide: {} tokens / {} factor = {} expected, got {}",
+                n_tokens, factor, expected_count, pooled.len()
+            );
+            // If it multiplied instead, we'd get way more tokens
+            prop_assert!(
+                pooled.len() < n_tokens * factor,
+                "Should not multiply: {} tokens * {} factor would be {}, got {}",
+                n_tokens, factor, n_tokens * factor, pooled.len()
+            );
         }
 
         /// Blend with alpha=0 returns second score

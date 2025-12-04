@@ -1,0 +1,20 @@
+# cargo-mutants configuration for rank-refine
+# See https://mutants.rs/ for documentation
+
+# Exclude Python bindings and fuzz targets from mutation testing
+exclude = [
+    "rank-refine-python/**",
+    "fuzz/**",
+]
+
+# Focus on core library
+include = [
+    "rank-refine/src/**/*.rs",
+]
+
+# Timeout for each test run (seconds)
+timeout = 300
+
+# Number of parallel workers
+jobs = 4
+

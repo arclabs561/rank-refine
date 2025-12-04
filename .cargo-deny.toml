@@ -1,0 +1,50 @@
+# Cargo-deny configuration for security and license checks
+# See: https://github.com/rustsec/cargo-deny
+
+[advisories]
+# Check for security advisories
+vulnerability = "deny"
+unmaintained = "warn"
+unsound = "deny"
+yanked = "deny"
+
+[licenses]
+# License policy
+default = "deny"
+copyleft = "deny"
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+]
+deny = [
+    "GPL-2.0",
+    "GPL-3.0",
+    "AGPL-3.0",
+]
+
+[licenses.private]
+# Allow private workspace crates
+ignore = true
+
+[bans]
+# Dependency ban policy
+multiple-versions = "warn"
+deny = []
+skip = []
+
+[sources]
+# Source registry policy
+unknown-registry = "deny"
+unknown-git = "warn"
+path = "allow"
+crates-io = "allow"
+github = "allow"
+
+[targets]
+# Platform-specific checks
+all-features = true
+
