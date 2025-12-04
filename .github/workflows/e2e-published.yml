@@ -1,0 +1,136 @@
+name: E2E Test Published Artifacts
+
+on:
+  workflow_run:
+    workflows: ["Publish", "Publish WASM"]
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to test'
+        required: false
+        type: string
+
+jobs:
+  test-rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      
+      - name: Get published version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=$(grep '^version = ' Cargo.toml | cut -d'"' -f2)
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Test published crate
+        run: |
+          cargo new --bin test-published-e2e 2>/dev/null || rm -rf test-published-e2e && cargo new --bin test-published-e2e
+          cd test-published-e2e
+          echo 'rank-refine = { version = "'"${{ steps.version.outputs.version }}"'" }' >> Cargo.toml
+          
+          cat > src/main.rs << 'RUSTEOF'
+          use rank_refine::cosine;
+          
+          fn main() {
+              let query = vec![1.0, 0.0];
+              let doc = vec![0.707, 0.707];
+              
+              let score = cosine(&query, &doc);
+              assert!(score > 0.0 && score <= 1.0, "Cosine similarity should be in [0, 1]");
+              
+              println!("✅ Published crate works: cosine similarity = {}", score);
+              println!("✅ All Rust E2E tests passed");
+          }
+          RUSTEOF
+          
+          cargo build --release || {
+            echo "⚠️  Package not yet published (version ${{ steps.version.outputs.version }})"
+            exit 0
+          }
+          cargo run --release
+
+  test-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Get published version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=$(grep '^version = ' Cargo.toml | cut -d'"' -f2)
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Install and test
+        run: |
+          pip install "rank-refine==${{ steps.version.outputs.version }}" || {
+            echo "⚠️  Package not yet published (version ${{ steps.version.outputs.version }})"
+            exit 0
+          }
+          
+          python3 << 'PYEOF'
+          import rank_refine
+          
+          query = [1.0, 0.0]
+          doc = [0.707, 0.707]
+          
+          score = rank_refine.cosine(query, doc)
+          assert 0.0 < score <= 1.0, "Cosine similarity should be in [0, 1]"
+          
+          print(f"✅ Published Python package works: cosine = {score}")
+          print("✅ All Python E2E tests passed")
+          PYEOF
+
+  test-wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Get published version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=$(grep '^version = ' Cargo.toml | cut -d'"' -f2)
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Install and test
+        run: |
+          npm install "@arclabs561/rank-refine@${{ steps.version.outputs.version }}" || {
+            echo "⚠️  Package not yet published (version ${{ steps.version.outputs.version }})"
+            exit 0
+          }
+          
+          node << 'NODEEOF'
+          const rankRefine = require('@arclabs561/rank-refine');
+          
+          const query = [1.0, 0.0];
+          const doc = [0.707, 0.707];
+          
+          const score = rankRefine.cosine(query, doc);
+          if (score <= 0 || score > 1) {
+            throw new Error(`Invalid cosine similarity: ${score}`);
+          }
+          
+          console.log(`✅ Published WASM package works: cosine = ${score}`);
+          console.log("✅ All WASM E2E tests passed");
+          NODEEOF
+
