@@ -209,9 +209,9 @@ fn test_pool_tokens_all_identical() {
 fn test_hierarchical_pooling_empty() {
     let tokens: Vec<Vec<f32>> = vec![];
     
-    // pool_tokens uses greedy by default, but empty should still fail
+    // pool_tokens returns error for empty input
     let result = colbert::pool_tokens(&tokens, 2);
-    assert!(result.is_err());
+    assert!(result.is_err(), "Empty tokens should return error");
 }
 
 #[test]
