@@ -55,6 +55,24 @@ jobs:
             exit 0
           }
           cargo run --release
+      
+      - name: Security audit (cargo-audit)
+        if: success() || failure()
+        continue-on-error: true
+        run: |
+          cd test-published-e2e
+          if ! command -v cargo-audit &> /dev/null; then
+            cargo install cargo-audit --locked || echo "⚠️  Failed to install cargo-audit"
+          fi
+          cargo audit --deny warnings 2>&1 || echo "⚠️  Security vulnerabilities found"
+      
+      - name: Best practices check
+        if: success() || failure()
+        continue-on-error: true
+        run: |
+          cd test-published-e2e
+          cargo check --all-features 2>&1 | head -10 || echo "⚠️  Some features may not compile"
+          cargo doc --no-deps 2>&1 | tail -5 || echo "⚠️  Documentation may have issues"
 
   test-python:
     runs-on: ubuntu-latest
@@ -92,6 +110,30 @@ jobs:
           
           print(f"✅ Published Python package works: cosine = {score}")
           print("✅ All Python E2E tests passed")
+          PYEOF
+      
+      - name: Security audit (safety, pip-audit)
+        if: success() || failure()
+        continue-on-error: true
+        run: |
+          pip install safety pip-audit || echo "⚠️  Failed to install security tools"
+          safety check --json 2>&1 | head -20 || echo "⚠️  Security vulnerabilities found"
+          pip-audit --format=json 2>&1 | head -30 || echo "⚠️  Dependency vulnerabilities found"
+      
+      - name: Best practices check
+        if: success() || failure()
+        continue-on-error: true
+        run: |
+          python3 << 'PYEOF'
+          import rank_refine
+          import inspect
+          
+          if hasattr(rank_refine, '__version__'):
+              print(f"✅ Package version: {rank_refine.__version__}")
+          if rank_refine.__doc__:
+              print("✅ Package has documentation")
+          assert callable(rank_refine.cosine), "cosine should be callable"
+          print("✅ Best practices check complete")
           PYEOF
 
   test-wasm:
@@ -132,5 +174,34 @@ jobs:
           
           console.log(`✅ Published WASM package works: cosine = ${score}`);
           console.log("✅ All WASM E2E tests passed");
+          NODEEOF
+      
+      - name: Security audit (npm audit)
+        if: success() || failure()
+        continue-on-error: true
+        run: |
+          npm audit --audit-level=moderate 2>&1 || echo "⚠️  Security vulnerabilities found"
+      
+      - name: Best practices check
+        if: success() || failure()
+        continue-on-error: true
+        run: |
+          npm ls --depth=1 2>&1 | head -20
+          node << 'NODEEOF'
+          const rankRefine = require('@arclabs561/rank-refine');
+          const fs = require('fs');
+          const path = require('path');
+          
+          const pkgPath = path.join(process.cwd(), 'node_modules', '@arclabs561', 'rank-refine', 'package.json');
+          if (fs.existsSync(pkgPath)) {
+              const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+              ['name', 'version', 'description', 'license'].forEach(field => {
+                  if (pkg[field]) console.log(`✅ ${field}: ${pkg[field]}`);
+              });
+          }
+          if (typeof rankRefine.cosine === 'function') {
+              console.log("✅ Function cosine is available");
+          }
+          console.log("✅ Best practices check complete");
           NODEEOF
 
