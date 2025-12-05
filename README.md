@@ -2,6 +2,12 @@
 
 SIMD-accelerated similarity scoring for vector search and RAG. Provides MaxSim (ColBERT/ColPali), cosine similarity, diversity selection (MMR, DPP), token pooling, token-level alignment/highlighting, and Matryoshka refinement. Supports both text (ColBERT) and multimodal (ColPali) late interaction.
 
+## Why Late Interaction?
+
+Traditional dense embeddings compress query and document into single vectors, losing fine-grained token-level matching. **Problem**: "machine learning" and "learning machines" have similar dense embeddings but different token-level semantics.
+
+**Solution**: Late interaction (MaxSim) computes token-level similarities and aggregates them. Preserves semantic matching while enabling efficient retrieval. Best for ColBERT-style retrieval, multimodal search (ColPali), and scenarios where token-level precision matters.
+
 This repository contains a Cargo workspace with multiple crates:
 
 - **[`rank-refine`](rank-refine/)** — Core library (SIMD-accelerated)
