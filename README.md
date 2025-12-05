@@ -192,3 +192,10 @@ This repository uses a Cargo workspace to organize the codebase:
 - **Path dependencies** — Python crate depends on core via path (no version conflicts)
 - **Default members** — Only core crate builds by default (`cargo build`)
 
+## See Also
+
+- **[rank-fusion](https://crates.io/crates/rank-fusion)**: Combine ranked lists from multiple retrievers (RRF, CombMNZ, etc.)
+- **[rank-relax](https://crates.io/crates/rank-relax)**: Differentiable ranking and sorting operations
+- **[rank-eval](https://crates.io/crates/rank-eval)**: IR evaluation metrics and TREC format parsing
+- **[Integration Examples](../INTEGRATION_EXAMPLES.md)**: Complete pipelines using multiple rank-* crates together
+

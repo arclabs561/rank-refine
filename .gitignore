@@ -12,3 +12,6 @@ MISSING_FEATURES.md
 *.so
 *.dylib
 *.dll
+
+# Archive directory for temporary analysis files
+.archive/
