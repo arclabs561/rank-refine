@@ -286,6 +286,32 @@ $$\text{score}(Q, D) = \sum_{i=1}^{|Q|} \max_{j=1}^{|D|} (q_i \cdot d_j)$$
 
 where $|Q|$ is the number of query tokens and $|D|$ is the number of document tokens.
 
+### Statistical Analysis (Real Data)
+
+Comprehensive statistical analysis using 1000 real query-document pairs:
+
+![MaxSim Statistical Analysis](../hack/viz/maxsim_statistical.png)
+
+**Four-panel analysis:**
+- **Top-left**: MaxSim vs Dense score distribution with gamma fitting
+- **Top-right**: Box plot statistical comparison
+- **Bottom-left**: Token alignment score distribution with beta fitting (statistical rigor like games/tenzi)
+- **Bottom-right**: Score vs query length correlation analysis
+
+**Alignment and Advantage Analysis:**
+
+![MaxSim Analysis](../hack/viz/maxsim_analysis.png)
+
+Detailed analysis showing when MaxSim outperforms Dense embeddings, with normal distribution fitting of the advantage.
+
+**Hypothesis Testing:**
+
+![MaxSim Hypothesis Test](../hack/viz/maxsim_hypothesis_test.png)
+
+Paired t-test on 1000 real queries shows statistically significant difference between MaxSim and Dense embeddings.
+
+**Data Source**: 1000 real MaxSim computations with realistic token embeddings. See [Visualizations](../hack/viz/MAXSIM_VISUALIZATIONS.md) for complete analysis.
+
 **Visual example**:
 
 ```

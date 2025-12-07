@@ -1,0 +1,35 @@
+---
+title: "rank-refine Specific Rules"
+id: refine-specific
+description: "Repository-specific rules for rank-refine"
+priority: 50
+alwaysApply: true
+---
+
+# rank-refine Specific Rules
+
+These rules extend the shared base rules with refine-specific guidelines.
+
+## Algorithm-Specific
+
+- **MaxSim**: SIMD-accelerated token-level similarity
+- **ColBERT-style**: Late interaction scoring for precision
+- **Performance target**: 61ms per query for 100-1000 candidates
+
+## Data Sources
+
+- Example data from `examples/complete_workflow.rs`
+- Benchmark data from `cargo bench` output
+- Real-world reranking scenarios
+
+## Testing
+
+- SIMD correctness verified in unit tests
+- Performance benchmarks track latency targets
+- Integration tests verify Python bindings
+
+## Documentation
+
+- MaxSim formula documented with visualizations
+- Performance characteristics in README
+- Python binding examples in `rank-refine-python/`

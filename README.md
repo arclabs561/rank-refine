@@ -4,9 +4,7 @@ SIMD-accelerated similarity scoring for vector search and RAG. Provides MaxSim (
 
 ## Why Late Interaction?
 
-Traditional dense embeddings compress query and document into single vectors, losing fine-grained token-level matching. **Problem**: "machine learning" and "learning machines" have similar dense embeddings but different token-level semantics.
-
-**Solution**: Late interaction (MaxSim) computes token-level similarities and aggregates them. Preserves semantic matching while enabling efficient retrieval. Best for ColBERT-style retrieval, multimodal search (ColPali), and scenarios where token-level precision matters.
+Dense embeddings compress query and document into single vectors, losing token-level matching. Late interaction (MaxSim) computes token-level similarities and aggregates them, preserving semantic matching while enabling efficient retrieval.
 
 This repository contains a Cargo workspace with multiple crates:
 
@@ -154,8 +152,7 @@ computeSimilarity();
 
 - [Core crate documentation](rank-refine/README.md)
 - [Python bindings](rank-refine-python/README.md)
-- [Integration guide](rank-refine/INTEGRATION.md)
-- [Design principles](rank-refine/DESIGN.md)
+- [Additional Documentation](docs/) - Integration guides, design docs, and more
 
 ## Development
 
